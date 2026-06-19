@@ -4,3 +4,9 @@
 !cmd/
 !api/
 !internal/
+!hack/
+
+# ---- Re-include downstream additions (DO NOT REMOVE) ----
+!vendor/
+!Makefile
+!LICENSE
