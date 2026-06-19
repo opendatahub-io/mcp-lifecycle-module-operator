@@ -30,6 +30,9 @@ spec:
     - linux/arm64
   - name: dockerfile
     value: Dockerfile
+  - name: additional-tags
+    value:
+    - latest
   pipelineSpec:
     description: |
       This pipeline is ideal for building multi-arch container images from a Containerfile while maintaining trust after pipeline customization.
@@ -484,6 +487,8 @@ spec:
         - "false"
     - name: apply-tags
       params:
+      - name: ADDITIONAL_TAGS
+        value: $(params.additional-tags[*])
       - name: IMAGE_URL
         value: $(tasks.build-image-index.results.IMAGE_URL)
       - name: IMAGE_DIGEST
