@@ -9,6 +9,7 @@ metadata:
     pipelinesascode.tekton.dev/max-keep-runs: "3"
     pipelinesascode.tekton.dev/on-cel-expression: event == "push" && target_branch
       == "main"
+    pipelinesascode.tekton.dev/target-namespace: "mcp-lifecycle-operator-tenant"
   labels:
     appstudio.openshift.io/application: mcp-lifecycle-module-operator-main
     appstudio.openshift.io/component: mcp-lifecycle-module-operator-main
