@@ -387,7 +387,7 @@ spec:
       - name: CACHI2_ARTIFACT
         value: $(tasks.prefetch-dependencies.results.CACHI2_ARTIFACT)
       - name: ARGS
-        value: "--project-name=odh-mcp-lifecycle-operator-{{target_branch}} --report --org=e375f4f6-e672-4c28-b177-fe203914b4e2"
+        value: "--project-name=odh-mcp-lifecycle-module-operator-{{target_branch}} --report --org=e375f4f6-e672-4c28-b177-fe203914b4e2"
       runAfter:
       - build-image-index
       taskRef:
