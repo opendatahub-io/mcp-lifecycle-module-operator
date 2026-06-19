@@ -1,28 +1,65 @@
-ARG GOLANG_VERSION=1.26
+# -----------------------------------------------------------------------------
+# Build arguments
+# -----------------------------------------------------------------------------
+ARG BUILDER_IMAGE=registry.redhat.io/ubi9/go-toolset:latest
+ARG BASE_IMAGE=registry.redhat.io/ubi9/ubi-minimal:latest
 
-ARG BUILDPLATFORM
-ARG TARGETPLATFORM
+# -----------------------------------------------------------------------------
+# Builder stage
+# -----------------------------------------------------------------------------
+FROM ${BUILDER_IMAGE} AS builder
 
-FROM --platform=$BUILDPLATFORM registry.access.redhat.com/ubi9/go-toolset:$GOLANG_VERSION AS builder
-ARG CGO_ENABLED=1
-ARG GOEXPERIMENT=strictfipsruntime
 ARG TARGETOS
 ARG TARGETARCH
-USER root
+ARG TARGETPLATFORM
+
 WORKDIR /workspace
-COPY go.mod go.sum ./
 
-RUN go mod download
+# Copy source code
+COPY . .
 
-COPY cmd/main.go cmd/main.go
-COPY api/ api/
-COPY internal/ internal/
+USER root
 
-RUN CGO_ENABLED=${CGO_ENABLED} GOEXPERIMENT=${GOEXPERIMENT} GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -a -trimpath -ldflags="-s -w" -o manager cmd/main.go
+# Enable strict FIPS runtime support during build
+ENV GOEXPERIMENT=strictfipsruntime
+# Build the manager binary
+RUN make -f Makefile-ocp.mk build-ocp GO_BUILD_ENV="GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH}"
 
-FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+# -----------------------------------------------------------------------------
+# Runtime stage
+# -----------------------------------------------------------------------------
+FROM --platform=$TARGETPLATFORM ${BASE_IMAGE}
+
 WORKDIR /
-COPY --from=builder /workspace/manager .
-USER 1001
 
+# Copy the controller binary
+COPY --from=builder /workspace/manager .
+
+# Copy license files
+RUN mkdir /licenses
+COPY --from=builder /workspace/LICENSE /licenses/
+
+# Run as non-root
+USER 65532:65532
+
+# -----------------------------------------------------------------------------
+# Labels for enterprise contract
+# -----------------------------------------------------------------------------
+LABEL com.redhat.component=mcp-lifecycle-module-operator
+LABEL cpe="cpe:/a:redhat:mcp_lifecycle_operator:0.1::el9"
+LABEL description="MCP lifecycle module operator"
+LABEL io.k8s.description="MCP lifecycle module operator"
+LABEL io.k8s.display-name="MCP lifecycle module operator"
+LABEL io.openshift.tags="openshift,mcp,operator"
+LABEL name="mcp-lifecycle-operator-beta/mcp-lifecycle-module-rhel9-operator"
+LABEL release=0.1.0
+LABEL url="https://github.com/opendatahub-io/mcp-lifecycle-operator"
+LABEL vendor="Red Hat, Inc."
+LABEL version=0.1.0
+LABEL summary="MCP lifecycle module operator"
+LABEL konflux.additional-tags="latest"
+
+# -----------------------------------------------------------------------------
+# Entrypoint
+# -----------------------------------------------------------------------------
 ENTRYPOINT ["/manager"]
