@@ -6,7 +6,7 @@ require (
 	github.com/manifestival/manifestival v0.7.2
 	github.com/onsi/ginkgo/v2 v2.31.0
 	github.com/onsi/gomega v1.42.0
-	github.com/opendatahub-io/odh-platform-utilities v0.0.0-20260506180717-e15e712db78d
+	github.com/opendatahub-io/odh-platform-utilities v0.1.0
 	k8s.io/api v0.35.2
 	k8s.io/apiextensions-apiserver v0.35.2
 	k8s.io/apimachinery v0.35.4
