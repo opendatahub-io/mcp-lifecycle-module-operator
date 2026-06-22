@@ -1,0 +1,50 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "assigneesFromCodeOwners": true,
+  "automergeStrategy": "auto",
+  "automergeType": "pr",
+  "prConcurrentLimit": 5,
+  "ignoreTests": false,
+  "rebaseLabel": "needs-rebase",
+  "rebaseWhen": "behind-base-branch",
+  "recreateWhen": "always",
+  "commitMessagePrefix": "[{{baseBranch}}]",
+  "enabledManagers": ["tekton", "gomod", "dockerfile"],
+  "ignorePaths": ["Dockerfile", "/docs/**"],
+  "postUpdateOptions": [
+    "gomodTidy",
+    "gomodUpdateImportPaths",
+    "gomodVendor"
+  ],
+  "packageRules": [
+    {
+      "matchManagers": ["tekton"],
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
+      "groupName": "all minor dependencies",
+      "automerge": true,
+      "description": "Group all minor dependencies",
+      "addLabels": ["jira/valid-reference", "lgtm", "approved"]
+    },
+    {
+      "matchManagers": ["dockerfile"],
+      "matchFileNames": ["Dockerfile.ci", "Dockerfile.ocp"],
+      "automerge": true,
+      "addLabels": ["jira/valid-reference", "lgtm", "approved"]
+    },
+    {
+      "matchManagers": ["gomod"],
+      "matchUpdateTypes": ["patch", "pin", "digest"],
+      "groupName": "k8s.io dependencies",
+      "matchPackageNames": ["k8s.io/{/,}**"]
+    },
+    {
+      "matchManagers": ["gomod"],
+      "matchUpdateTypes": ["patch", "pin", "digest"],
+      "groupName": "sigs.k8s.io dependencies",
+      "matchPackageNames": ["sigs.k8s.io/{/,}**"]
+    }
+  ],
+  "vulnerabilityAlerts": {
+    "enabled": true
+  }
+}
