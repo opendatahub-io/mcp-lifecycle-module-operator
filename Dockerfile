@@ -23,7 +23,7 @@ USER root
 # Enable strict FIPS runtime support during build
 ENV GOEXPERIMENT=strictfipsruntime
 # Build the manager binary
-RUN make -f build GO_BUILD_ENV="GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH}"
+RUN make build GO_BUILD_ENV="GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH}"
 
 # -----------------------------------------------------------------------------
 # Runtime stage

@@ -5,6 +5,7 @@ IMG ?= $(IMAGE_REGISTRY)/$(IMAGE_NAME):$(IMAGE_TAG)
 PLATFORM ?= linux/amd64
 CGO_ENABLED ?= 1
 COMMON_BUILD_ARGS += -trimpath -ldflags="-s -w"
+CLEAN_TARGETS ?= manager
 
 MCPLO_REPO ?= https://github.com/opendatahub-io/mcp-lifecycle-operator
 MCPLO_REF ?= main
