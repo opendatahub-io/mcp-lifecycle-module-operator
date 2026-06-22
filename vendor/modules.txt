@@ -112,8 +112,8 @@ github.com/k8s-manifest-kit/engine/pkg/pipeline
 github.com/k8s-manifest-kit/engine/pkg/postrenderer
 github.com/k8s-manifest-kit/engine/pkg/transformer
 github.com/k8s-manifest-kit/engine/pkg/types
-# github.com/k8s-manifest-kit/pkg v0.2.1-0.20260302085906-6946a2e8e1d5
-## explicit; go 1.25.7
+# github.com/k8s-manifest-kit/pkg v0.2.1-0.20260604145543-c4a39bd14f36
+## explicit; go 1.25.11
 github.com/k8s-manifest-kit/pkg/util/k8s
 github.com/k8s-manifest-kit/pkg/util/maps
 # github.com/manifestival/manifestival v0.7.2
