@@ -30,6 +30,10 @@ spec:
     - linux/arm64
   - name: dockerfile
     value: Dockerfile
+  - name: build-args
+    value:
+    - BUILDER_IMAGE=registry.redhat.io/ubi9/go-toolset:latest
+    - BASE_IMAGE=registry.redhat.io/ubi9/ubi-minimal:latest
   - name: additional-tags
     value:
     - latest

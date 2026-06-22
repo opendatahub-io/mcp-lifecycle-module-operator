@@ -9,5 +9,4 @@
 # ---- Re-include downstream additions (DO NOT REMOVE) ----
 !vendor/
 !Makefile
-!Makefile-ocp.mk
 !LICENSE
