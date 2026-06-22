@@ -5,7 +5,8 @@ IMG ?= $(IMAGE_REGISTRY)/$(IMAGE_NAME):$(IMAGE_TAG)
 PLATFORM ?= linux/amd64
 CGO_ENABLED ?= 1
 COMMON_BUILD_ARGS += -trimpath -ldflags="-s -w"
-CLEAN_TARGETS ?= /bin/manager
+OUTPUT ?= ./bin/manager
+CLEAN_TARGETS ?= $(OUTPUT)
 
 MCPLO_REPO ?= https://github.com/opendatahub-io/mcp-lifecycle-operator
 MCPLO_REF ?= main
@@ -86,7 +87,8 @@ e2e-test: ## Run E2E tests (requires a deployed operator on a running cluster).
 
 .PHONY: build
 build: clean fmt ## Build manager binary.
-	CGO_ENABLED=$(CGO_ENABLED) $(GO_BUILD_ENV) go build $(COMMON_BUILD_ARGS) -tags=strictfipsruntime -mod=vendor -a -o /bin/manager cmd/main.go
+	mkdir -p $(dir $(OUTPUT))
+	CGO_ENABLED=$(CGO_ENABLED) $(GO_BUILD_ENV) go build $(COMMON_BUILD_ARGS) -tags=strictfipsruntime -mod=vendor -a -o $(OUTPUT) cmd/main.go
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
