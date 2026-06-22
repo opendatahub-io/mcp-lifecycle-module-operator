@@ -85,7 +85,7 @@ e2e-test: ## Run E2E tests (requires a deployed operator on a running cluster).
 ##@ Build
 
 .PHONY: build
-build: clean manifests generate fmt vet ## Build manager binary.
+build: clean fmt ## Build manager binary.
 	CGO_ENABLED=$(CGO_ENABLED) $(GO_BUILD_ENV) go build $(COMMON_BUILD_ARGS) -tags=strictfipsruntime -mod=vendor -a -o manager cmd/main.go
 
 .PHONY: run
