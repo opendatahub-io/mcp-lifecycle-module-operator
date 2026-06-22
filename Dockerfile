@@ -33,7 +33,7 @@ FROM --platform=$TARGETPLATFORM ${BASE_IMAGE}
 WORKDIR /
 
 # Copy the controller binary
-COPY --from=builder /workspace/bin/manager .
+COPY --from=builder /bin/manager .
 
 # Copy license files
 RUN mkdir /licenses
