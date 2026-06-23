@@ -136,7 +136,7 @@ func (r *MCPLifecycleOperatorReconciler) reconcile(ctx context.Context, cr *v1al
 	operandImage, operandNamespace, err := r.readPlatformConfig(ctx)
 	if err != nil {
 		cm.MarkFalse(v1alpha1.ConditionMCPLifecycleOperatorAvailable,
-			"ConfigMapNotFound", fmt.Sprintf("Platform config not found: %v", err))
+			"ConfigReadFailed", fmt.Sprintf("Platform config not available: %v", err))
 		cm.AggregateReady()
 		return ctrl.Result{}, fmt.Errorf("reading platform config: %w", err)
 	}
@@ -160,8 +160,8 @@ func (r *MCPLifecycleOperatorReconciler) reconcile(ctx context.Context, cr *v1al
 	}
 
 	if err := r.collectGarbage(ctx, cr, operandNamespace, desired); err != nil {
-		log.Error(err, "Garbage collection encountered errors, requeueing")
-		return ctrl.Result{RequeueAfter: defaultRequeueDelay}, nil
+		log.Error(err, "Garbage collection encountered errors")
+		return ctrl.Result{}, fmt.Errorf("collecting garbage: %w", err)
 	}
 
 	if result, ready := r.checkDeploymentsReady(ctx, desired, cm); !ready {

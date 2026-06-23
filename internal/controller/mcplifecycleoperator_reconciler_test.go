@@ -229,8 +229,8 @@ func TestReconcile_ConfigMapMissing(t *testing.T) {
 	if c.Status != metav1.ConditionFalse {
 		t.Errorf("condition status = %v, want False", c.Status)
 	}
-	if c.Reason != "ConfigMapNotFound" {
-		t.Errorf("condition reason = %q, want %q", c.Reason, "ConfigMapNotFound")
+	if c.Reason != "ConfigReadFailed" {
+		t.Errorf("condition reason = %q, want %q", c.Reason, "ConfigReadFailed")
 	}
 }
 
