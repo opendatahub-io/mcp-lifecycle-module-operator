@@ -204,8 +204,8 @@ github.com/jstemmer/go-junit-report v0.0.0-20190106144839-af01ea7f8024/go.mod h1
 github.com/jstemmer/go-junit-report v0.9.1/go.mod h1:Brl9GWCQeLvo8nXZwPNNblvFj/XSXhF0NWZEnDohbsk=
 github.com/k8s-manifest-kit/engine v0.2.1-0.20260302092700-39c16f95d249 h1:t5hu9tulQ9r+g6MqPkYAnzU1DajSpW9I2aQzqlxf5/U=
 github.com/k8s-manifest-kit/engine v0.2.1-0.20260302092700-39c16f95d249/go.mod h1:T6d7e/KdU3yDIXUSxK3dXlKcWohlCbtxAECQmBMFgwA=
-github.com/k8s-manifest-kit/pkg v0.2.1-0.20260302085906-6946a2e8e1d5 h1:CbixclOSNUSeuZDz+IrDCFjeRDVQE7sCXaEtMx0StSE=
-github.com/k8s-manifest-kit/pkg v0.2.1-0.20260302085906-6946a2e8e1d5/go.mod h1:FK2D/WI2GTjUJybtJcKwI+Q/kgxpFMs75ntGnXXtzY8=
+github.com/k8s-manifest-kit/pkg v0.2.1-0.20260604145543-c4a39bd14f36 h1:jnOHg/sIMHejd3oxNrQpQtQyzimtBNN0tFpwaoD/ApM=
+github.com/k8s-manifest-kit/pkg v0.2.1-0.20260604145543-c4a39bd14f36/go.mod h1:BjftD87GS7SPirpKTu7aN1Zo4hFxuTmlHkbBoFP+TDg=
 github.com/kisielk/errcheck v1.5.0/go.mod h1:pFxgyoBC7bSaBwPgfKdkLd5X25qrDl4LWUI2bnpBCr8=
 github.com/kisielk/gotool v1.0.0/go.mod h1:XhKaO+MFFWcvkIS/tQcRk01m1F5IRFswLeQ+oQHNcck=
 github.com/klauspost/compress v1.18.0 h1:c/Cqfb0r+Yi+JtIEq73FWXVkRonBlf0CRNYc8Zttxdo=
