@@ -183,6 +183,7 @@ func (r *MCPLifecycleOperatorReconciler) handleRemoved(ctx context.Context, cr *
 		return ctrl.Result{RequeueAfter: defaultRequeueDelay}, fmt.Errorf("deleting owned resources: %w", err)
 	}
 
+	cm.MarkFalse(v1alpha1.ConditionMCPLifecycleOperatorAvailable, "Removed", "MCPLifecycleOperator is in Removed state")
 	cm.MarkFalse(string(platformcommon.ConditionTypeReady), "Removed", "MCPLifecycleOperator is in Removed state")
 	cm.MarkFalse(string(platformcommon.ConditionTypeProvisioningSucceeded), "Removed", "MCPLifecycleOperator is in Removed state")
 	cm.MarkFalse(string(platformcommon.ConditionTypeDegraded), "NotDegraded", "")
