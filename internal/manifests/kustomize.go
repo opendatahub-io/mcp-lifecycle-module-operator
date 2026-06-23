@@ -124,7 +124,7 @@ func replaceImage(newImage string) manifestival.Transformer {
 
 		containers, found, err := unstructured.NestedSlice(u.Object, "spec", "template", "spec", "containers")
 		if err != nil {
-			return err
+			return fmt.Errorf("deployment %q: reading containers: %w", u.GetName(), err)
 		}
 		if !found {
 			return fmt.Errorf("deployment %q is missing spec.template.spec.containers", u.GetName())
