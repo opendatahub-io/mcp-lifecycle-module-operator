@@ -125,7 +125,10 @@ rules:
   resources:
   - mcpservers
   verbs:
-  - '*'
+  - delete
+  - get
+  - list
+  - watch
 - apiGroups:
   - mcp.x-k8s.io
   resources:
