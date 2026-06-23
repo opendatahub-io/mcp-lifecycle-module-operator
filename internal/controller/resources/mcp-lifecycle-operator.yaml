@@ -1877,7 +1877,14 @@ rules:
   resources:
   - mcpservers
   verbs:
-  - '*'
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+  - deletecollection
 - apiGroups:
   - mcp.x-k8s.io
   resources:
@@ -2060,6 +2067,9 @@ spec:
         - --health-probe-bind-address=:8081
         command:
         - /manager
+        env:
+        - name: GOMEMLIMIT
+          value: 460MiB
         image: mcp-lifecycle-operator:latest
         livenessProbe:
           httpGet:
