@@ -202,8 +202,8 @@ github.com/json-iterator/go v1.1.12 h1:PV8peI4a0ysnczrg+LtxykD8LfKY9ML6u2jnxaEnr
 github.com/json-iterator/go v1.1.12/go.mod h1:e30LSqwooZae/UwlEbR2852Gd8hjQvJoHmT4TnhNGBo=
 github.com/jstemmer/go-junit-report v0.0.0-20190106144839-af01ea7f8024/go.mod h1:6v2b51hI/fHJwM22ozAgKL4VKDeJcHhJFhtBdhmNjmU=
 github.com/jstemmer/go-junit-report v0.9.1/go.mod h1:Brl9GWCQeLvo8nXZwPNNblvFj/XSXhF0NWZEnDohbsk=
-github.com/k8s-manifest-kit/engine v0.2.1-0.20260302092700-39c16f95d249 h1:t5hu9tulQ9r+g6MqPkYAnzU1DajSpW9I2aQzqlxf5/U=
-github.com/k8s-manifest-kit/engine v0.2.1-0.20260302092700-39c16f95d249/go.mod h1:T6d7e/KdU3yDIXUSxK3dXlKcWohlCbtxAECQmBMFgwA=
+github.com/k8s-manifest-kit/engine v0.2.1-0.20260611122437-2eac20bfa748 h1:isPPQiGAPxaW/WHPDELea80oEMXx+812dra4WLHWru0=
+github.com/k8s-manifest-kit/engine v0.2.1-0.20260611122437-2eac20bfa748/go.mod h1:fc5Jw9t+1iHrXRrTAngzb0dTHpqYzTQc+PX+sz76GM0=
 github.com/k8s-manifest-kit/pkg v0.2.1-0.20260604145543-c4a39bd14f36 h1:jnOHg/sIMHejd3oxNrQpQtQyzimtBNN0tFpwaoD/ApM=
 github.com/k8s-manifest-kit/pkg v0.2.1-0.20260604145543-c4a39bd14f36/go.mod h1:BjftD87GS7SPirpKTu7aN1Zo4hFxuTmlHkbBoFP+TDg=
 github.com/kisielk/errcheck v1.5.0/go.mod h1:pFxgyoBC7bSaBwPgfKdkLd5X25qrDl4LWUI2bnpBCr8=
