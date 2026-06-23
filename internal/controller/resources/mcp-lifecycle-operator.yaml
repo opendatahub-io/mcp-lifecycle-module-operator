@@ -2066,6 +2066,9 @@ spec:
         - --health-probe-bind-address=:8081
         command:
         - /manager
+        env:
+        - name: GOMEMLIMIT
+          value: "482344960"
         image: mcp-lifecycle-operator:latest
         livenessProbe:
           httpGet:

@@ -38,6 +38,8 @@ spec:
               fieldPath: metadata.namespace
         - name: OPERATOR_VERSION
           value: "0.0.1"
+        - name: GOMEMLIMIT
+          value: "120586240"
         securityContext:
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true
