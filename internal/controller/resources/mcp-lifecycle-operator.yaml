@@ -1877,13 +1877,14 @@ rules:
   resources:
   - mcpservers
   verbs:
-  - create
-  - delete
   - get
   - list
-  - patch
-  - update
   - watch
+  - create
+  - update
+  - patch
+  - delete
+  - deletecollection
 - apiGroups:
   - mcp.x-k8s.io
   resources:
@@ -2068,7 +2069,7 @@ spec:
         - /manager
         env:
         - name: GOMEMLIMIT
-          value: "482344960"
+          value: 460MiB
         image: mcp-lifecycle-operator:latest
         livenessProbe:
           httpGet:

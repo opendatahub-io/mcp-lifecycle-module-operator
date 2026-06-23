@@ -24,15 +24,15 @@ import (
 	"io/fs"
 
 	"github.com/manifestival/manifestival"
+	v1alpha1 "github.com/opendatahub-io/mcp-lifecycle-module-operator/api/v1alpha1"
 	odhLabels "github.com/opendatahub-io/odh-platform-utilities/pkg/metadata/labels"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/util/yaml"
 )
 
 const (
-	operandYAMLPath  = "resources/mcp-lifecycle-operator.yaml"
+	operandYAMLPath         = "resources/mcp-lifecycle-operator.yaml"
 	DefaultOperandNamespace = "mcp-lifecycle-operator-system"
-	partOfValue      = "mcplifecycleoperator"
 )
 
 // KustomizeProvider loads pre-rendered Kustomize manifests from an embedded
@@ -65,7 +65,7 @@ func (p *KustomizeProvider) Manifests(_ context.Context, params Params) ([]unstr
 
 	manifest, err = manifest.Transform(
 		injectLabels(map[string]string{
-			odhLabels.PlatformPartOf: partOfValue,
+			odhLabels.PlatformPartOf: v1alpha1.MCPLifecycleOperatorServiceName,
 		}),
 		manifestival.InjectNamespace(targetNS),
 		replaceImage(params.OperandImage),

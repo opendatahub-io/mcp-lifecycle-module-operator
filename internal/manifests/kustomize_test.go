@@ -21,6 +21,7 @@ import (
 	"testing"
 	"testing/fstest"
 
+	v1alpha1 "github.com/opendatahub-io/mcp-lifecycle-module-operator/api/v1alpha1"
 	odhLabels "github.com/opendatahub-io/odh-platform-utilities/pkg/metadata/labels"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
@@ -85,7 +86,7 @@ func TestKustomizeProviderManifests(t *testing.T) {
 
 	for _, obj := range resources {
 		labels := obj.GetLabels()
-		if labels[odhLabels.PlatformPartOf] != partOfValue {
+		if labels[odhLabels.PlatformPartOf] != v1alpha1.MCPLifecycleOperatorServiceName {
 			t.Errorf("resource %s/%s missing part-of label", obj.GetKind(), obj.GetName())
 		}
 	}

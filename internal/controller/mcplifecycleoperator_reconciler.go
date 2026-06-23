@@ -80,7 +80,7 @@ const (
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles;rolebindings;clusterroles;clusterrolebindings,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=mcp.x-k8s.io,resources=mcpservers,verbs=get;list;watch;delete
+// +kubebuilder:rbac:groups=mcp.x-k8s.io,resources=mcpservers,verbs=get;list;watch;create;update;patch;delete;deletecollection
 // +kubebuilder:rbac:groups=mcp.x-k8s.io,resources=mcpservers/finalizers,verbs=update
 // +kubebuilder:rbac:groups=mcp.x-k8s.io,resources=mcpservers/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=authentication.k8s.io,resources=tokenreviews,verbs=create
@@ -160,6 +160,9 @@ func (r *MCPLifecycleOperatorReconciler) reconcile(ctx context.Context, cr *v1al
 	}
 
 	if err := r.collectGarbage(ctx, cr, operandNamespace, desired); err != nil {
+		cm.MarkFalse(v1alpha1.ConditionMCPLifecycleOperatorAvailable,
+			"GarbageCollectionFailed", fmt.Sprintf("Failed to collect garbage: %v", err))
+		cm.AggregateReady()
 		log.Error(err, "Garbage collection encountered errors")
 		return ctrl.Result{}, fmt.Errorf("collecting garbage: %w", err)
 	}
@@ -293,7 +296,7 @@ func (r *MCPLifecycleOperatorReconciler) collectGarbage(ctx context.Context, cr 
 
 	collector := gc.New(
 		gc.WithOnlyCollectOwned(false),
-		gc.WithLabel(odhLabels.PlatformPartOf, "mcplifecycleoperator"),
+		gc.WithLabel(odhLabels.PlatformPartOf, v1alpha1.MCPLifecycleOperatorServiceName),
 		gc.InNamespace(operandNamespace),
 		gc.WithObjectPredicate(func(_ gc.RunParams, obj unstructured.Unstructured) (bool, error) {
 			k := resourceKey{
@@ -321,7 +324,7 @@ func (r *MCPLifecycleOperatorReconciler) deleteAllOwned(ctx context.Context, cr 
 
 	collector := gc.New(
 		gc.WithOnlyCollectOwned(false),
-		gc.WithLabel(odhLabels.PlatformPartOf, "mcplifecycleoperator"),
+		gc.WithLabel(odhLabels.PlatformPartOf, v1alpha1.MCPLifecycleOperatorServiceName),
 		gc.InNamespace(operandNamespace),
 		gc.WithObjectPredicate(func(_ gc.RunParams, _ unstructured.Unstructured) (bool, error) {
 			return true, nil
@@ -364,7 +367,7 @@ func (r *MCPLifecycleOperatorReconciler) SetupWithManager(mgr ctrl.Manager) erro
 	})
 
 	managedPredicate := predicate.NewPredicateFuncs(func(obj client.Object) bool {
-		return obj.GetLabels()[odhLabels.PlatformPartOf] == "mcplifecycleoperator"
+		return obj.GetLabels()[odhLabels.PlatformPartOf] == v1alpha1.MCPLifecycleOperatorServiceName
 	})
 
 	configMapPredicate := predicate.NewPredicateFuncs(func(obj client.Object) bool {

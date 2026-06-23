@@ -85,7 +85,7 @@ func main() {
 	discoveryClient := discovery.NewDiscoveryClientForConfigOrDie(cfg)
 
 	deployer := deploy.NewDeployer(
-		deploy.WithFieldOwner("mcplifecycleoperator"),
+		deploy.WithFieldOwner(v1alpha1.MCPLifecycleOperatorServiceName),
 		deploy.WithMode(deploy.ModeSSA),
 		deploy.WithCache(),
 		deploy.WithApplyOrder(),
