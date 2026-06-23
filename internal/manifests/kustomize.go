@@ -31,7 +31,7 @@ import (
 
 const (
 	operandYAMLPath  = "resources/mcp-lifecycle-operator.yaml"
-	defaultNamespace = "mcp-lifecycle-operator-system"
+	DefaultOperandNamespace = "mcp-lifecycle-operator-system"
 	partOfValue      = "mcplifecycleoperator"
 )
 
@@ -60,7 +60,7 @@ func (p *KustomizeProvider) Manifests(_ context.Context, params Params) ([]unstr
 
 	targetNS := params.OperandNamespace
 	if targetNS == "" {
-		targetNS = defaultNamespace
+		targetNS = DefaultOperandNamespace
 	}
 
 	manifest, err = manifest.Transform(

@@ -208,7 +208,7 @@ func (r *MCPLifecycleOperatorReconciler) readPlatformConfig(ctx context.Context)
 
 	namespace = configMap.Data["operand-namespace"]
 	if namespace == "" {
-		namespace = "mcp-lifecycle-operator-system"
+		namespace = manifests.DefaultOperandNamespace
 	}
 
 	return image, namespace, nil
@@ -344,8 +344,8 @@ func (r *MCPLifecycleOperatorReconciler) resolveOperandNamespace(ctx context.Con
 	_, ns, err := r.readPlatformConfig(ctx)
 	if err != nil {
 		log.Info("Platform ConfigMap not available, falling back to default operand namespace",
-			"default", "mcp-lifecycle-operator-system", "error", err)
-		return "mcp-lifecycle-operator-system"
+			"default", manifests.DefaultOperandNamespace, "error", err)
+		return manifests.DefaultOperandNamespace
 	}
 	return ns
 }

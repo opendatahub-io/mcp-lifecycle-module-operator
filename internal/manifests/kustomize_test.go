@@ -194,8 +194,8 @@ func TestDefaultNamespaceUsedWhenEmpty(t *testing.T) {
 
 	for _, obj := range resources {
 		if obj.GetKind() == "ServiceAccount" {
-			if obj.GetNamespace() != defaultNamespace {
-				t.Errorf("ServiceAccount namespace = %q, want %q", obj.GetNamespace(), defaultNamespace)
+			if obj.GetNamespace() != DefaultOperandNamespace {
+				t.Errorf("ServiceAccount namespace = %q, want %q", obj.GetNamespace(), DefaultOperandNamespace)
 			}
 		}
 	}
