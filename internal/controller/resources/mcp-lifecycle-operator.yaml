@@ -2070,7 +2070,7 @@ spec:
         env:
         - name: GOMEMLIMIT
           value: 460MiB
-        image: quay.io/redhat-user-workloads/mcp-lifecycle-operator-tenant/mcp-lifecycle-operator-main:latest
+        image: quay.io/opendatahub/odh-mcp-lifecycle-operator:odh-stable
         livenessProbe:
           httpGet:
             path: /healthz
