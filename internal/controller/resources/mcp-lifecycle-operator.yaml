@@ -2070,7 +2070,7 @@ spec:
         env:
         - name: GOMEMLIMIT
           value: 460MiB
-        image: quay.io/opendatahub/odh-mcp-lifecycle-operator:odh-stable
+        image: mcp-lifecycle-operator:latest
         livenessProbe:
           httpGet:
             path: /healthz

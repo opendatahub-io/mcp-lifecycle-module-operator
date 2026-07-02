@@ -1,12 +1,14 @@
-IMAGE_REGISTRY ?= quay.io/redhat-user-workloads/mcp-lifecycle-operator-tenant
-IMAGE_NAME ?= mcp-lifecycle-module-operator-main
-IMAGE_TAG ?= latest
+IMAGE_REGISTRY ?= quay.io/opendatahub
+IMAGE_NAME ?= odh-mcp-lifecycle-module-operator
+IMAGE_TAG ?= odh-stable
 IMG ?= $(IMAGE_REGISTRY)/$(IMAGE_NAME):$(IMAGE_TAG)
 PLATFORM ?= linux/amd64
 CGO_ENABLED ?= 1
 COMMON_BUILD_ARGS += -trimpath -ldflags="-s -w"
 OUTPUT ?= ./bin/manager
 CLEAN_TARGETS ?= $(OUTPUT)
+
+MCPLO_OPERAND_IMAGE ?= quay.io/opendatahub/odh-mcp-lifecycle-operator:odh-stable
 
 MCPLO_REPO ?= https://github.com/opendatahub-io/mcp-lifecycle-operator
 MCPLO_REF ?= main
@@ -125,6 +127,9 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster.
 deploy: manifests kustomize ## Deploy controller to the K8s cluster.
 	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
 	$(KUSTOMIZE) build config/default | kubectl apply -f -
+	kubectl set env -n mcp-lifecycle-module-operator-system \
+		deploy/mcp-lifecycle-module-operator-controller-manager \
+		RELATED_IMAGE_ODH_MCP_LIFECYCLE_OPERATOR_IMAGE=$(MCPLO_OPERAND_IMAGE)
 
 .PHONY: undeploy
 undeploy: kustomize ## Undeploy controller from the K8s cluster.
@@ -141,7 +146,7 @@ update-operand-manifests: ## Vendor MCPLO manifests.
 	mkdir -p config/manifests/mcp-lifecycle-operator
 	cp -r "$(TMP)/config/." config/manifests/mcp-lifecycle-operator/
 	# Update MCPLO manifests
-	$(MAKE) -C "$(TMP)" -f Makefile-ocp.mk build-installer
+	$(MAKE) -C "$(TMP)" build-installer
 	cp "$(TMP)/dist/install.yaml" internal/controller/resources/mcp-lifecycle-operator.yaml
 	rm -rf "$(TMP)"
 
