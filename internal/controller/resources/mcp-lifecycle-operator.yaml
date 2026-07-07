@@ -2135,6 +2135,9 @@ metadata:
   namespace: mcp-lifecycle-operator-system
 spec:
   ingress:
+  - ports:
+    - port: 8081
+      protocol: TCP
   - from:
     - namespaceSelector:
         matchLabels:
