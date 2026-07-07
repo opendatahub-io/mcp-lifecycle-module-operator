@@ -146,7 +146,7 @@ update-operand-manifests: ## Vendor MCPLO manifests.
 	mkdir -p config/manifests/mcp-lifecycle-operator
 	cp -r "$(TMP)/config/." config/manifests/mcp-lifecycle-operator/
 	# Update MCPLO manifests
-	$(MAKE) -C "$(TMP)" build-installer
+	$(MAKE) -C "$(TMP)" -f Makefile-ocp.mk build-installer
 	cp "$(TMP)/dist/install.yaml" internal/controller/resources/mcp-lifecycle-operator.yaml
 	rm -rf "$(TMP)"
 
