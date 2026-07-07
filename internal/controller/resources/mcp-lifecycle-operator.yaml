@@ -1854,7 +1854,15 @@ rules:
   verbs:
   - get
   - list
+  - patch
+  - update
   - watch
+- apiGroups:
+  - mcp.x-k8s.io
+  resources:
+  - mcpservers/finalizers
+  verbs:
+  - update
 - apiGroups:
   - mcp.x-k8s.io
   resources:
@@ -1862,6 +1870,17 @@ rules:
   verbs:
   - get
   - patch
+  - update
+- apiGroups:
+  - networking.k8s.io
+  resources:
+  - networkpolicies
+  verbs:
+  - create
+  - get
+  - list
+  - update
+  - watch
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -2105,3 +2124,30 @@ spec:
       serviceAccountName: mcp-lifecycle-operator-controller-manager
       terminationGracePeriodSeconds: 10
       volumes: []
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: mcp-lifecycle-operator
+  name: mcp-lifecycle-operator-allow-metrics-traffic
+  namespace: mcp-lifecycle-operator-system
+spec:
+  ingress:
+  - ports:
+    - port: 8081
+      protocol: TCP
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          metrics: enabled
+    ports:
+    - port: 8443
+      protocol: TCP
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: mcp-lifecycle-operator
+      control-plane: controller-manager
+  policyTypes:
+  - Ingress
