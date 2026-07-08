@@ -96,6 +96,7 @@ func main() {
 			DefaultNamespaces: map[string]cache.Config{
 				podNamespace: {},
 			},
+			DefaultTransform: cache.TransformStripManagedFields(),
 			ByObject: map[client.Object]cache.ByObject{
 				&v1alpha1.MCPLifecycleOperator{}:  {},
 				&rbacv1.ClusterRole{}:             {Label: managedSelector},
