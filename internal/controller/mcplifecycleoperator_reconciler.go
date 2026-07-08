@@ -96,10 +96,18 @@ func (r *MCPLifecycleOperatorReconciler) Reconcile(ctx context.Context, req ctrl
 	cr := &v1alpha1.MCPLifecycleOperator{}
 	if err := r.Get(ctx, req.NamespacedName, cr); err != nil {
 		if k8serr.IsNotFound(err) {
+			log.V(1).Info("MCPLifecycleOperator resource not found, skipping reconciliation")
+
 			return ctrl.Result{}, nil
 		}
+
 		return ctrl.Result{}, err
 	}
+
+	log.Info("Reconciling MCPLifecycleOperator",
+		"generation", cr.Generation,
+		"managementState", cr.Spec.ManagementState,
+	)
 
 	orig := cr.DeepCopy()
 
@@ -110,7 +118,12 @@ func (r *MCPLifecycleOperatorReconciler) Reconcile(ctx context.Context, req ctrl
 		if reconcileErr != nil {
 			return ctrl.Result{}, errors.Join(reconcileErr, patchErr)
 		}
+
 		return ctrl.Result{}, patchErr
+	}
+
+	if reconcileErr == nil {
+		log.Info("Reconciliation complete", "phase", cr.Status.Status.Phase)
 	}
 
 	return result, reconcileErr
@@ -145,6 +158,8 @@ func (r *MCPLifecycleOperatorReconciler) reconcile(ctx context.Context, cr *v1al
 		return ctrl.Result{}, fmt.Errorf("fetching TLS config: %w", err)
 	}
 
+	log.V(1).Info("TLS configuration resolved", "minVersion", tlsMinVersion)
+
 	desired, err := r.ManifestProvider.Manifests(ctx, manifests.Params{
 		OperandNamespace: r.PodNamespace,
 		OperandImage:     r.OperandImage,
@@ -155,21 +170,28 @@ func (r *MCPLifecycleOperatorReconciler) reconcile(ctx context.Context, cr *v1al
 		cm.MarkFalse(v1alpha1.ConditionMCPLifecycleOperatorAvailable,
 			"ManifestRenderFailed", fmt.Sprintf("Failed to render operand manifests: %v", err))
 		cm.AggregateReady()
+
 		return ctrl.Result{}, fmt.Errorf("rendering operand manifests: %w", err)
 	}
+
+	log.V(1).Info("Rendered operand manifests", "resourceCount", len(desired))
 
 	if err := r.applyResources(ctx, cr, desired); err != nil {
 		cm.MarkFalse(v1alpha1.ConditionMCPLifecycleOperatorAvailable,
 			"DeployFailed", fmt.Sprintf("Failed to apply operand resources: %v", err))
 		cm.AggregateReady()
+
 		return ctrl.Result{}, fmt.Errorf("applying operand resources: %w", err)
 	}
+
+	log.V(1).Info("Applied operand resources", "resourceCount", len(desired))
 
 	if err := r.collectGarbage(ctx, cr, r.PodNamespace, desired); err != nil {
 		cm.MarkFalse(v1alpha1.ConditionMCPLifecycleOperatorAvailable,
 			"GarbageCollectionFailed", fmt.Sprintf("Failed to collect garbage: %v", err))
 		cm.AggregateReady()
 		log.Error(err, "Garbage collection encountered errors")
+
 		return ctrl.Result{}, fmt.Errorf("collecting garbage: %w", err)
 	}
 
@@ -187,10 +209,14 @@ func (r *MCPLifecycleOperatorReconciler) handleRemoved(ctx context.Context, cr *
 	log := logf.FromContext(ctx)
 
 	log.Info("ManagementState is Removed, deleting all owned resources")
+
 	if err := r.deleteAllOwned(ctx, cr); err != nil {
 		log.Error(err, "Failed to delete owned resources, will retry on next reconcile")
+
 		return ctrl.Result{RequeueAfter: defaultRequeueDelay}, fmt.Errorf("deleting owned resources: %w", err)
 	}
+
+	log.Info("Successfully deleted all owned resources")
 
 	cm.MarkFalse(v1alpha1.ConditionMCPLifecycleOperatorAvailable, "Removed", "MCPLifecycleOperator is in Removed state")
 	cm.MarkFalse(string(platformcommon.ConditionTypeReady), "Removed", "MCPLifecycleOperator is in Removed state")
@@ -210,12 +236,15 @@ func (r *MCPLifecycleOperatorReconciler) applyResources(ctx context.Context, cr 
 }
 
 func (r *MCPLifecycleOperatorReconciler) checkDeploymentsReady(ctx context.Context, desired []unstructured.Unstructured, cm *v1alpha1.ConditionsManager) (ctrl.Result, bool) {
+	log := logf.FromContext(ctx)
+
 	for _, dn := range findDeploymentNames(desired) {
 		operandDeployment := &appsv1.Deployment{}
 		if err := r.Get(ctx, dn, operandDeployment); err != nil {
 			cm.MarkFalse(v1alpha1.ConditionMCPLifecycleOperatorAvailable,
 				"DeploymentNotFound", fmt.Sprintf("Operand deployment %s not found: %v", dn.Name, err))
 			cm.AggregateReady()
+
 			return ctrl.Result{RequeueAfter: defaultRequeueDelay}, false
 		}
 
@@ -223,6 +252,7 @@ func (r *MCPLifecycleOperatorReconciler) checkDeploymentsReady(ctx context.Conte
 		if operandDeployment.Spec.Replicas != nil {
 			desiredReplicas = *operandDeployment.Spec.Replicas
 		}
+
 		if operandDeployment.Status.AvailableReplicas < desiredReplicas {
 			msg := fmt.Sprintf("Operand deployment %s has %d/%d available replicas",
 				dn.Name, operandDeployment.Status.AvailableReplicas, desiredReplicas)
@@ -231,14 +261,24 @@ func (r *MCPLifecycleOperatorReconciler) checkDeploymentsReady(ctx context.Conte
 			for _, c := range operandDeployment.Status.Conditions {
 				if c.Type == appsv1.DeploymentReplicaFailure && c.Message != "" {
 					msg = c.Message
+
 					break
 				}
+
 				if c.Type == appsv1.DeploymentAvailable && c.Message != "" {
 					msg = c.Message
 				}
 			}
+
+			log.Info("Operand deployment not ready, requeueing",
+				"deployment", dn.Name,
+				"availableReplicas", operandDeployment.Status.AvailableReplicas,
+				"desiredReplicas", desiredReplicas,
+			)
+
 			cm.MarkFalse(v1alpha1.ConditionMCPLifecycleOperatorAvailable, "DeploymentNotReady", msg)
 			cm.AggregateReady()
+
 			return ctrl.Result{RequeueAfter: defaultRequeueDelay}, false
 		}
 	}
