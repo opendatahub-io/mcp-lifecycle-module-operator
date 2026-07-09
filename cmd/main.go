@@ -25,17 +25,21 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"github.com/opendatahub-io/odh-platform-utilities/pkg/deploy"
+	odhLabels "github.com/opendatahub-io/odh-platform-utilities/pkg/metadata/labels"
 
 	v1alpha1 "github.com/opendatahub-io/mcp-lifecycle-module-operator/api/v1alpha1"
 	"github.com/opendatahub-io/mcp-lifecycle-module-operator/internal/controller"
@@ -70,11 +74,36 @@ func main() {
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 	log := logf.Log.WithName("setup")
 
+	podNamespace := os.Getenv("SYSTEM_NAMESPACE")
+	if podNamespace == "" {
+		log.Error(nil, "missing required environment variable", "name", "SYSTEM_NAMESPACE")
+		os.Exit(1)
+	}
+
+	// Cluster-scoped resources (ClusterRole, ClusterRoleBinding, CRD) cannot be
+	// namespace-scoped, so we filter by the managed-resource label to avoid
+	// caching every such object in the cluster.
+	managedSelector := labels.SelectorFromSet(labels.Set{
+		odhLabels.PlatformPartOf: v1alpha1.MCPLifecycleOperatorServiceName,
+	})
+
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "mcp-lifecycle-module-operator-leader",
+		Cache: cache.Options{
+			DefaultNamespaces: map[string]cache.Config{
+				podNamespace: {},
+			},
+			DefaultTransform: cache.TransformStripManagedFields(),
+			ByObject: map[client.Object]cache.ByObject{
+				&v1alpha1.MCPLifecycleOperator{}:  {},
+				&rbacv1.ClusterRole{}:             {Label: managedSelector},
+				&rbacv1.ClusterRoleBinding{}:      {Label: managedSelector},
+				&extv1.CustomResourceDefinition{}: {Label: managedSelector},
+			},
+		},
 	})
 	if err != nil {
 		log.Error(err, "unable to start manager")
@@ -95,11 +124,6 @@ func main() {
 
 	manifestProvider := manifests.NewKustomizeProvider(controller.ResourcesFS)
 
-	podNamespace := os.Getenv("SYSTEM_NAMESPACE")
-	if podNamespace == "" {
-		log.Error(nil, "missing required environment variable", "name", "SYSTEM_NAMESPACE")
-		os.Exit(1)
-	}
 	operatorVersion := os.Getenv("OPERATOR_VERSION")
 	if operatorVersion == "" {
 		log.Error(nil, "missing required environment variable", "name", "OPERATOR_VERSION")
