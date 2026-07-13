@@ -87,4 +87,9 @@ data:
     help: "https://kind.sigs.k8s.io/docs/user/local-registry/"
 EOF
 
+# Install prometheus-operator for ServiceMonitor CRD support.
+echo "Installing prometheus-operator..."
+kubectl apply --server-side -f https://github.com/prometheus-operator/prometheus-operator/releases/latest/download/bundle.yaml
+kubectl -n default rollout status deployment/prometheus-operator --timeout=60s
+
 echo "Kind cluster ready with local registry at localhost:${REGISTRY_PORT}"
