@@ -2133,7 +2133,7 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/name: mcp-lifecycle-operator
     control-plane: controller-manager
-  name: controller-manager-metrics-monitor
+  name: mcp-lifecycle-operator-controller-manager-metrics-monitor
   namespace: system
 spec:
   endpoints:
