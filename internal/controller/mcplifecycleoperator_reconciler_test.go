@@ -518,6 +518,64 @@ func TestCheckDeploymentsReady_NilReplicas(t *testing.T) {
 
 func TestReconcile_StatusPatch_SetsReleaseInfo(t *testing.T) {
 	cr := newTestCR()
+	platformCM := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      platformConfigName,
+			Namespace: testPodNamespace,
+		},
+		Data: map[string]string{
+			platformVersionKey: "2.20.0",
+		},
+	}
+	cli := fake.NewClientBuilder().
+		WithScheme(testScheme).
+		WithObjects(cr, platformCM).
+		WithStatusSubresource(cr).
+		Build()
+
+	r := newTestReconciler(cli, &fakeManifestProvider{err: fmt.Errorf("render failed")}, testOperandImage)
+
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: v1alpha1.MCPLifecycleOperatorInstanceName},
+	})
+	if err == nil {
+		t.Fatal("expected error for manifest render failure, got nil")
+	}
+
+	updated := &v1alpha1.MCPLifecycleOperator{}
+	if getErr := cli.Get(context.Background(), types.NamespacedName{Name: v1alpha1.MCPLifecycleOperatorInstanceName}, updated); getErr != nil {
+		t.Fatalf("failed to get updated CR: %v", getErr)
+	}
+
+	releases := updated.Status.ComponentReleaseStatus.Releases
+	if len(releases) != 2 {
+		t.Fatalf("expected 2 releases, got %d", len(releases))
+	}
+
+	releasesByName := make(map[string]platformcommon.ComponentRelease, len(releases))
+	for _, r := range releases {
+		releasesByName[r.Name] = r
+	}
+
+	moduleRelease, ok := releasesByName[v1alpha1.MCPLifecycleOperatorServiceName]
+	if !ok {
+		t.Fatal("missing module release entry")
+	}
+	if moduleRelease.Version != testOperatorVersion {
+		t.Errorf("module release version = %q, want %q", moduleRelease.Version, testOperatorVersion)
+	}
+
+	platformRelease, ok := releasesByName[platformReleaseName]
+	if !ok {
+		t.Fatal("missing platform release entry")
+	}
+	if platformRelease.Version != "2.20.0" {
+		t.Errorf("platform release version = %q, want %q", platformRelease.Version, "2.20.0")
+	}
+}
+
+func TestReconcile_StatusPatch_NoPlatformConfigMap(t *testing.T) {
+	cr := newTestCR()
 	cli := fake.NewClientBuilder().
 		WithScheme(testScheme).
 		WithObjects(cr).
@@ -540,13 +598,13 @@ func TestReconcile_StatusPatch_SetsReleaseInfo(t *testing.T) {
 
 	releases := updated.Status.ComponentReleaseStatus.Releases
 	if len(releases) != 1 {
-		t.Fatalf("expected 1 release, got %d", len(releases))
-	}
-	if releases[0].Version != testOperatorVersion {
-		t.Errorf("release version = %q, want %q", releases[0].Version, testOperatorVersion)
+		t.Fatalf("expected 1 release (module only), got %d", len(releases))
 	}
 	if releases[0].Name != v1alpha1.MCPLifecycleOperatorServiceName {
 		t.Errorf("release name = %q, want %q", releases[0].Name, v1alpha1.MCPLifecycleOperatorServiceName)
+	}
+	if releases[0].Version != testOperatorVersion {
+		t.Errorf("release version = %q, want %q", releases[0].Version, testOperatorVersion)
 	}
 }
 

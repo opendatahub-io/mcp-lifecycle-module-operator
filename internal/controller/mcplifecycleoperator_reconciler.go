@@ -66,6 +66,10 @@ type MCPLifecycleOperatorReconciler struct {
 
 const (
 	defaultRequeueDelay = 10 * time.Second
+
+	platformConfigName  = "odh-" + v1alpha1.MCPLifecycleOperatorServiceName + "-config"
+	platformVersionKey  = "platformVersion"
+	platformReleaseName = "platform"
 )
 
 // +kubebuilder:rbac:groups=components.platform.opendatahub.io,resources=mcplifecycleoperators,verbs=get;list;watch;create;update;patch;delete
@@ -134,15 +138,26 @@ func (r *MCPLifecycleOperatorReconciler) reconcile(ctx context.Context, cr *v1al
 	log := logf.FromContext(ctx)
 	cm := v1alpha1.NewConditionsManager(cr, cr.Generation)
 
+	platformVersion := r.getPlatformVersion(ctx)
+
 	defer func() {
 		cr.Status.Status.ObservedGeneration = cr.Generation
 		cr.Status.Status.Phase = cm.Phase()
+
+		releases := []platformcommon.ComponentRelease{{
+			Name:    v1alpha1.MCPLifecycleOperatorServiceName,
+			RepoURL: "https://github.com/opendatahub-io/mcp-lifecycle-module-operator",
+			Version: r.OperatorVersion,
+		}}
+		if platformVersion != "" {
+			releases = append(releases, platformcommon.ComponentRelease{
+				Name:    platformReleaseName,
+				Version: platformVersion,
+			})
+		}
+
 		cr.SetReleaseStatus(platformcommon.ComponentReleaseStatus{
-			Releases: []platformcommon.ComponentRelease{{
-				Name:    v1alpha1.MCPLifecycleOperatorServiceName,
-				RepoURL: "https://github.com/opendatahub-io/mcp-lifecycle-module-operator",
-				Version: r.OperatorVersion,
-			}},
+			Releases: releases,
 		})
 	}()
 
@@ -363,6 +378,25 @@ func (r *MCPLifecycleOperatorReconciler) deleteAllOwned(ctx context.Context, cr 
 		Version:         r.OperatorVersion,
 		PlatformType:    "OpenDataHub",
 	})
+}
+
+func (r *MCPLifecycleOperatorReconciler) getPlatformVersion(ctx context.Context) string {
+	log := logf.FromContext(ctx)
+
+	cm := &corev1.ConfigMap{}
+	if err := r.Get(ctx, types.NamespacedName{Namespace: r.PodNamespace, Name: platformConfigName}, cm); err != nil {
+		if !k8serr.IsNotFound(err) {
+			log.Error(err, "Failed to read platform config ConfigMap", "name", platformConfigName)
+		}
+		return ""
+	}
+
+	v := cm.Data[platformVersionKey]
+	if v == "" {
+		log.V(1).Info("Platform config ConfigMap has no platformVersion key", "name", platformConfigName)
+	}
+
+	return v
 }
 
 func (r *MCPLifecycleOperatorReconciler) resolveOperandNamespace() string {
