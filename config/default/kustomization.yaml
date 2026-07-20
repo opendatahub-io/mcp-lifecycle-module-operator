@@ -7,3 +7,6 @@ resources:
 - ../crd
 - ../rbac
 - ../manager
+
+patches:
+- path: remove-namespace.yaml
