@@ -125,6 +125,7 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster.
 
 .PHONY: deploy
 deploy: manifests kustomize ## Deploy controller to the K8s cluster.
+	kubectl create namespace mcp-lifecycle-module-operator-system --dry-run=client -o yaml | kubectl apply -f -
 	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
 	$(KUSTOMIZE) build config/default | kubectl apply -f -
 	kubectl set env -n mcp-lifecycle-module-operator-system \
