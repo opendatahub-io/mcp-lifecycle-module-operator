@@ -60,10 +60,10 @@ tidy: ## Tidy Go dependencies.
 
 .PHONY: verify
 verify: manifests generate fmt tidy ## Verify generated code, formatting, and dependencies are up-to-date.
-	@if ! git diff --exit-code --name-only; then \
+	@if ! git diff --exit-code --name-only || [ -n "$$(git ls-files --others --exclude-standard)" ]; then \
 		echo "ERROR: generated files are out of date. Run 'make manifests generate fmt' and commit the result."; \
 		echo -e '\nDifference:\n'; \
-		git --no-pager diff; \
+		git status --short; git --no-pager diff; \
 		exit 1; \
 	else \
 		echo "Generated code and formatting are up-to-date."; \
@@ -94,7 +94,7 @@ e2e-test: ## Run E2E tests (requires a deployed operator on a running cluster).
 .PHONY: build
 build: clean fmt ## Build manager binary.
 	mkdir -p $(dir $(OUTPUT))
-	CGO_ENABLED=$(CGO_ENABLED) $(GO_BUILD_ENV) go build $(COMMON_BUILD_ARGS) -tags=strictfipsruntime -mod=readonly -a -o $(OUTPUT) cmd/main.go
+	CGO_ENABLED="$(CGO_ENABLED)" $(GO_BUILD_ENV) go build $(COMMON_BUILD_ARGS) -tags=strictfipsruntime -mod=readonly -a -o "$(OUTPUT)" cmd/main.go
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
