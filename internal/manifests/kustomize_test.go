@@ -264,6 +264,9 @@ func TestInjectTLSEnvVars(t *testing.T) {
 			if envMap["TLS_CIPHER_SUITES"] != "TLS_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256" {
 				t.Errorf("TLS_CIPHER_SUITES = %q, want expected value", envMap["TLS_CIPHER_SUITES"])
 			}
+			if envMap["PROPAGATE_TLS_ENV_VARS"] != "true" {
+				t.Errorf("PROPAGATE_TLS_ENV_VARS = %q, want 'true'", envMap["PROPAGATE_TLS_ENV_VARS"])
+			}
 		}
 	}
 }
@@ -290,7 +293,7 @@ func TestInjectTLSEnvVars_EmptyValues_SkipsInjection(t *testing.T) {
 			for _, e := range envSlice {
 				env := e.(map[string]interface{})
 				name := env["name"].(string)
-				if name == "TLS_MIN_VERSION" || name == "TLS_CIPHER_SUITES" {
+				if name == "TLS_MIN_VERSION" || name == "TLS_CIPHER_SUITES" || name == "PROPAGATE_TLS_ENV_VARS" {
 					t.Errorf("TLS env var %q should not be present when values are empty", name)
 				}
 			}

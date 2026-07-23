@@ -120,6 +120,7 @@ func injectLabels(labels map[string]string) manifestival.Transformer {
 const (
 	envTLSMinVersion   = "TLS_MIN_VERSION"
 	envTLSCipherSuites = "TLS_CIPHER_SUITES"
+	envPropagateTLS    = "PROPAGATE_TLS_ENV_VARS"
 )
 
 func injectTLSEnvVars(minVersion, cipherSuites string) manifestival.Transformer {
@@ -149,6 +150,7 @@ func injectTLSEnvVars(minVersion, cipherSuites string) manifestival.Transformer 
 			envSlice, _, _ := unstructured.NestedSlice(container, "env")
 			envSlice = setEnvVar(envSlice, envTLSMinVersion, minVersion)
 			envSlice = setEnvVar(envSlice, envTLSCipherSuites, cipherSuites)
+			envSlice = setEnvVar(envSlice, envPropagateTLS, "true")
 
 			if err := unstructured.SetNestedSlice(container, envSlice, "env"); err != nil {
 				return fmt.Errorf("deployment %q: setting TLS env vars: %w", u.GetName(), err)
