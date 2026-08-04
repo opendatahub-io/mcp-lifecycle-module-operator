@@ -465,8 +465,13 @@ func (r *MCPLifecycleOperatorReconciler) SetupWithManager(mgr ctrl.Manager) erro
 		return obj.GetLabels()[odhLabels.PlatformPartOf] == v1alpha1.MCPLifecycleOperatorServiceName
 	})
 
+	platformConfigPredicate := predicate.NewPredicateFuncs(func(obj client.Object) bool {
+		return obj.GetName() == platformConfigName && obj.GetNamespace() == r.PodNamespace
+	})
+
 	b := ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.MCPLifecycleOperator{}).
+		Watches(&corev1.ConfigMap{}, enqueueComponentCR, builder.WithPredicates(platformConfigPredicate)).
 		Watches(&appsv1.Deployment{}, enqueueComponentCR, builder.WithPredicates(managedPredicate)).
 		Watches(&corev1.ServiceAccount{}, enqueueComponentCR, builder.WithPredicates(managedPredicate)).
 		Watches(&corev1.Service{}, enqueueComponentCR, builder.WithPredicates(managedPredicate)).
