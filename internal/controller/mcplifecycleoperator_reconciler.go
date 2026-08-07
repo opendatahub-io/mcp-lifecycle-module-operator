@@ -67,10 +67,20 @@ type MCPLifecycleOperatorReconciler struct {
 const (
 	defaultRequeueDelay = 10 * time.Second
 
-	platformConfigName  = "odh-" + v1alpha1.MCPLifecycleOperatorServiceName + "-config"
-	platformVersionKey  = "platformVersion"
-	platformReleaseName = "platform"
+	platformConfigName     = "odh-" + v1alpha1.MCPLifecycleOperatorServiceName + "-config"
+	platformVersionKey     = "platformVersion"
+	distributionNameKey    = "distribution.name"
+	distributionVersionKey = "distribution.version"
+	platformReleaseName    = "platform"
+
+	distributionStandalone = "Standalone"
 )
+
+type platformConfig struct {
+	Available           bool
+	DistributionName    string
+	DistributionVersion string
+}
 
 // +kubebuilder:rbac:groups=components.platform.opendatahub.io,resources=mcplifecycleoperators,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=components.platform.opendatahub.io,resources=mcplifecycleoperators/status,verbs=get;update;patch
@@ -138,28 +148,9 @@ func (r *MCPLifecycleOperatorReconciler) reconcile(ctx context.Context, cr *v1al
 	log := logf.FromContext(ctx)
 	cm := v1alpha1.NewConditionsManager(cr, cr.Generation)
 
-	platformVersion := r.getPlatformVersion(ctx)
+	pc := r.getPlatformConfig(ctx)
 
-	defer func() {
-		cr.Status.Status.ObservedGeneration = cr.Generation
-		cr.Status.Status.Phase = cm.Phase()
-
-		releases := []platformcommon.ComponentRelease{{
-			Name:    v1alpha1.MCPLifecycleOperatorServiceName,
-			RepoURL: "https://github.com/opendatahub-io/mcp-lifecycle-module-operator",
-			Version: r.OperatorVersion,
-		}}
-		if platformVersion != "" {
-			releases = append(releases, platformcommon.ComponentRelease{
-				Name:    platformReleaseName,
-				Version: platformVersion,
-			})
-		}
-
-		cr.SetReleaseStatus(platformcommon.ComponentReleaseStatus{
-			Releases: releases,
-		})
-	}()
+	defer r.updateBaseStatus(cr, cm, pc)
 
 	if cr.Spec.ManagementState == platformcommon.Removed {
 		return r.handleRemoved(ctx, cr, cm)
@@ -218,7 +209,55 @@ func (r *MCPLifecycleOperatorReconciler) reconcile(ctx context.Context, cr *v1al
 	cm.MarkTrue(v1alpha1.ConditionMCPLifecycleOperatorAvailable)
 	cm.AggregateReady()
 
+	if pc.Available {
+		r.setDistributionStatus(cr, pc)
+	}
+
 	return ctrl.Result{}, nil
+}
+
+// updateBaseStatus is deferred in every reconcile to ensure observedGeneration,
+// phase, and release metadata are always written — regardless of whether the
+// reconciliation succeeded or failed.
+func (r *MCPLifecycleOperatorReconciler) updateBaseStatus(cr *v1alpha1.MCPLifecycleOperator, cm *v1alpha1.ConditionsManager, pc platformConfig) {
+	cr.Status.Status.ObservedGeneration = cr.Generation
+	cr.Status.Status.Phase = cm.Phase()
+
+	if pc.Available {
+		r.setReleases(cr, pc)
+	}
+}
+
+// setReleases populates the status.releases array with the module's own
+// release and, when available, the platform distribution version.
+func (r *MCPLifecycleOperatorReconciler) setReleases(cr *v1alpha1.MCPLifecycleOperator, pc platformConfig) {
+	releases := []platformcommon.ComponentRelease{{
+		Name:    v1alpha1.MCPLifecycleOperatorServiceName,
+		RepoURL: "https://github.com/opendatahub-io/mcp-lifecycle-module-operator",
+		Version: r.OperatorVersion,
+	}}
+
+	if pc.DistributionVersion != "" {
+		releases = append(releases, platformcommon.ComponentRelease{
+			Name:    platformReleaseName,
+			Version: pc.DistributionVersion,
+		})
+	}
+
+	cr.SetReleaseStatus(platformcommon.ComponentReleaseStatus{
+		Releases: releases,
+	})
+}
+
+// setDistributionStatus sets status.distribution to match the platform
+// ConfigMap values. Called only after a fully successful reconcile so the
+// ODH operator can compare ConfigMap (desired) vs status (current) to
+// track upgrade completion.
+func (r *MCPLifecycleOperatorReconciler) setDistributionStatus(cr *v1alpha1.MCPLifecycleOperator, pc platformConfig) {
+	cr.Status.Distribution = v1alpha1.Distribution{
+		Name:    pc.DistributionName,
+		Version: pc.DistributionVersion,
+	}
 }
 
 func (r *MCPLifecycleOperatorReconciler) handleRemoved(ctx context.Context, cr *v1alpha1.MCPLifecycleOperator, cm *v1alpha1.ConditionsManager) (ctrl.Result, error) {
@@ -380,23 +419,42 @@ func (r *MCPLifecycleOperatorReconciler) deleteAllOwned(ctx context.Context, cr 
 	})
 }
 
-func (r *MCPLifecycleOperatorReconciler) getPlatformVersion(ctx context.Context) string {
+func (r *MCPLifecycleOperatorReconciler) getPlatformConfig(ctx context.Context) platformConfig {
 	log := logf.FromContext(ctx)
 
 	cm := &corev1.ConfigMap{}
 	if err := r.Get(ctx, types.NamespacedName{Namespace: r.PodNamespace, Name: platformConfigName}, cm); err != nil {
 		if !k8serr.IsNotFound(err) {
 			log.Error(err, "Failed to read platform config ConfigMap", "name", platformConfigName)
+
+			return platformConfig{}
 		}
-		return ""
+
+		return platformConfig{
+			Available:           true,
+			DistributionName:    distributionStandalone,
+			DistributionVersion: r.OperatorVersion,
+		}
 	}
 
-	v := cm.Data[platformVersionKey]
-	if v == "" {
-		log.V(1).Info("Platform config ConfigMap has no platformVersion key", "name", platformConfigName)
+	name := cm.Data[distributionNameKey]
+	if name == "" {
+		name = distributionStandalone
 	}
 
-	return v
+	version := cm.Data[distributionVersionKey]
+	if version == "" {
+		version = cm.Data[platformVersionKey]
+	}
+	if version == "" {
+		version = r.OperatorVersion
+	}
+
+	return platformConfig{
+		Available:           true,
+		DistributionName:    name,
+		DistributionVersion: version,
+	}
 }
 
 func (r *MCPLifecycleOperatorReconciler) resolveOperandNamespace() string {
@@ -420,8 +478,13 @@ func (r *MCPLifecycleOperatorReconciler) SetupWithManager(mgr ctrl.Manager) erro
 		return obj.GetLabels()[odhLabels.PlatformPartOf] == v1alpha1.MCPLifecycleOperatorServiceName
 	})
 
+	platformConfigPredicate := predicate.NewPredicateFuncs(func(obj client.Object) bool {
+		return obj.GetName() == platformConfigName && obj.GetNamespace() == r.PodNamespace
+	})
+
 	b := ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.MCPLifecycleOperator{}).
+		Watches(&corev1.ConfigMap{}, enqueueComponentCR, builder.WithPredicates(platformConfigPredicate)).
 		Watches(&appsv1.Deployment{}, enqueueComponentCR, builder.WithPredicates(managedPredicate)).
 		Watches(&corev1.ServiceAccount{}, enqueueComponentCR, builder.WithPredicates(managedPredicate)).
 		Watches(&corev1.Service{}, enqueueComponentCR, builder.WithPredicates(managedPredicate)).

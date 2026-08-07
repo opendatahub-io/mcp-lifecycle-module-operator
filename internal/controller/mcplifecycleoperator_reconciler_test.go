@@ -24,17 +24,22 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	appsv1 "k8s.io/api/apps/v1"
+	authorizationv1 "k8s.io/api/authorization/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	fakedynamic "k8s.io/client-go/dynamic/fake"
+	kubefake "k8s.io/client-go/kubernetes/fake"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	platformcommon "github.com/opendatahub-io/odh-platform-utilities/api/common"
+	"github.com/opendatahub-io/odh-platform-utilities/pkg/deploy"
 
 	v1alpha1 "github.com/opendatahub-io/mcp-lifecycle-module-operator/api/v1alpha1"
 	"github.com/opendatahub-io/mcp-lifecycle-module-operator/internal/manifests"
@@ -45,6 +50,7 @@ var testScheme = func() *runtime.Scheme {
 	utilruntime.Must(v1alpha1.AddToScheme(s))
 	utilruntime.Must(corev1.AddToScheme(s))
 	utilruntime.Must(appsv1.AddToScheme(s))
+	utilruntime.Must(authorizationv1.AddToScheme(s))
 	utilruntime.Must(configv1.Install(s))
 	return s
 }()
@@ -82,6 +88,36 @@ func newTestReconciler(cli client.Client, provider manifests.Provider, operandIm
 	return &MCPLifecycleOperatorReconciler{
 		Client:           cli,
 		Scheme:           testScheme,
+		ManifestProvider: provider,
+		OperatorVersion:  testOperatorVersion,
+		PodNamespace:     testPodNamespace,
+		OperandImage:     operandImage,
+	}
+}
+
+func newTestReconcilerFull(provider manifests.Provider, operandImage string, objects ...client.Object) *MCPLifecycleOperatorReconciler {
+	cli := fake.NewClientBuilder().
+		WithScheme(testScheme).
+		WithObjects(objects...).
+		WithStatusSubresource(&v1alpha1.MCPLifecycleOperator{}).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+				if _, ok := obj.(*authorizationv1.SelfSubjectRulesReview); ok {
+					return nil
+				}
+				return c.Create(ctx, obj, opts...)
+			},
+		}).
+		Build()
+
+	kubeClient := kubefake.NewSimpleClientset()
+
+	return &MCPLifecycleOperatorReconciler{
+		Client:           cli,
+		Scheme:           testScheme,
+		Deployer:         deploy.NewDeployer(),
+		DynamicClient:    fakedynamic.NewSimpleDynamicClient(testScheme),
+		DiscoveryClient:  kubeClient.Discovery(),
 		ManifestProvider: provider,
 		OperatorVersion:  testOperatorVersion,
 		PodNamespace:     testPodNamespace,
@@ -216,7 +252,7 @@ func TestReconcile_ManifestProviderError(t *testing.T) {
 	}
 
 	updated := &v1alpha1.MCPLifecycleOperator{}
-	if getErr := cli.Get(context.Background(), types.NamespacedName{Name: v1alpha1.MCPLifecycleOperatorInstanceName}, updated); getErr != nil {
+	if getErr := r.Get(context.Background(), types.NamespacedName{Name: v1alpha1.MCPLifecycleOperatorInstanceName}, updated); getErr != nil {
 		t.Fatalf("failed to get updated CR: %v", getErr)
 	}
 
@@ -459,7 +495,7 @@ func TestReconcile_ConditionAggregation_OnManifestError(t *testing.T) {
 	}
 
 	updated := &v1alpha1.MCPLifecycleOperator{}
-	if getErr := cli.Get(context.Background(), types.NamespacedName{Name: v1alpha1.MCPLifecycleOperatorInstanceName}, updated); getErr != nil {
+	if getErr := r.Get(context.Background(), types.NamespacedName{Name: v1alpha1.MCPLifecycleOperatorInstanceName}, updated); getErr != nil {
 		t.Fatalf("failed to get updated CR: %v", getErr)
 	}
 
@@ -524,7 +560,8 @@ func TestReconcile_StatusPatch_SetsReleaseInfo(t *testing.T) {
 			Namespace: testPodNamespace,
 		},
 		Data: map[string]string{
-			platformVersionKey: "2.20.0",
+			distributionNameKey:    "SelfManagedRHOAI",
+			distributionVersionKey: "2.20.0",
 		},
 	}
 	cli := fake.NewClientBuilder().
@@ -543,7 +580,7 @@ func TestReconcile_StatusPatch_SetsReleaseInfo(t *testing.T) {
 	}
 
 	updated := &v1alpha1.MCPLifecycleOperator{}
-	if getErr := cli.Get(context.Background(), types.NamespacedName{Name: v1alpha1.MCPLifecycleOperatorInstanceName}, updated); getErr != nil {
+	if getErr := r.Get(context.Background(), types.NamespacedName{Name: v1alpha1.MCPLifecycleOperatorInstanceName}, updated); getErr != nil {
 		t.Fatalf("failed to get updated CR: %v", getErr)
 	}
 
@@ -592,19 +629,147 @@ func TestReconcile_StatusPatch_NoPlatformConfigMap(t *testing.T) {
 	}
 
 	updated := &v1alpha1.MCPLifecycleOperator{}
-	if getErr := cli.Get(context.Background(), types.NamespacedName{Name: v1alpha1.MCPLifecycleOperatorInstanceName}, updated); getErr != nil {
+	if getErr := r.Get(context.Background(), types.NamespacedName{Name: v1alpha1.MCPLifecycleOperatorInstanceName}, updated); getErr != nil {
 		t.Fatalf("failed to get updated CR: %v", getErr)
 	}
 
 	releases := updated.Status.ComponentReleaseStatus.Releases
-	if len(releases) != 1 {
-		t.Fatalf("expected 1 release (module only), got %d", len(releases))
+	if len(releases) != 2 {
+		t.Fatalf("expected 2 releases (module + platform with operator version), got %d", len(releases))
 	}
-	if releases[0].Name != v1alpha1.MCPLifecycleOperatorServiceName {
-		t.Errorf("release name = %q, want %q", releases[0].Name, v1alpha1.MCPLifecycleOperatorServiceName)
+}
+
+func TestReconcile_Distribution_NotSetOnFailure(t *testing.T) {
+	cr := newTestCR()
+	platformCM := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      platformConfigName,
+			Namespace: testPodNamespace,
+		},
+		Data: map[string]string{
+			distributionNameKey:    "OpenDataHub",
+			distributionVersionKey: "3.5.1",
+		},
 	}
-	if releases[0].Version != testOperatorVersion {
-		t.Errorf("release version = %q, want %q", releases[0].Version, testOperatorVersion)
+	cli := fake.NewClientBuilder().
+		WithScheme(testScheme).
+		WithObjects(cr, platformCM).
+		WithStatusSubresource(cr).
+		Build()
+
+	r := newTestReconciler(cli, &fakeManifestProvider{err: fmt.Errorf("render failed")}, testOperandImage)
+
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: v1alpha1.MCPLifecycleOperatorInstanceName},
+	})
+	if err == nil {
+		t.Fatal("expected reconcile error, got nil")
+	}
+
+	updated := &v1alpha1.MCPLifecycleOperator{}
+	if getErr := r.Get(context.Background(), types.NamespacedName{Name: v1alpha1.MCPLifecycleOperatorInstanceName}, updated); getErr != nil {
+		t.Fatalf("failed to get updated CR: %v", getErr)
+	}
+
+	if updated.Status.Distribution.Name != "" {
+		t.Errorf("distribution name = %q, want empty (not set on failed reconcile)", updated.Status.Distribution.Name)
+	}
+	if updated.Status.Distribution.Version != "" {
+		t.Errorf("distribution version = %q, want empty (not set on failed reconcile)", updated.Status.Distribution.Version)
+	}
+}
+
+func TestReconcile_Distribution_SetOnSuccess(t *testing.T) {
+	cr := newTestCR()
+	platformCM := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      platformConfigName,
+			Namespace: testPodNamespace,
+		},
+		Data: map[string]string{
+			distributionNameKey:    "SelfManagedRHOAI",
+			distributionVersionKey: "3.5.1",
+		},
+	}
+
+	r := newTestReconcilerFull(&fakeManifestProvider{}, testOperandImage, cr, platformCM)
+
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: v1alpha1.MCPLifecycleOperatorInstanceName},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	updated := &v1alpha1.MCPLifecycleOperator{}
+	if getErr := r.Get(context.Background(), types.NamespacedName{Name: v1alpha1.MCPLifecycleOperatorInstanceName}, updated); getErr != nil {
+		t.Fatalf("failed to get updated CR: %v", getErr)
+	}
+
+	if updated.Status.Distribution.Name != "SelfManagedRHOAI" {
+		t.Errorf("distribution name = %q, want %q", updated.Status.Distribution.Name, "SelfManagedRHOAI")
+	}
+	if updated.Status.Distribution.Version != "3.5.1" {
+		t.Errorf("distribution version = %q, want %q", updated.Status.Distribution.Version, "3.5.1")
+	}
+}
+
+func TestReconcile_Distribution_Standalone(t *testing.T) {
+	cr := newTestCR()
+
+	r := newTestReconcilerFull(&fakeManifestProvider{}, testOperandImage, cr)
+
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: v1alpha1.MCPLifecycleOperatorInstanceName},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	updated := &v1alpha1.MCPLifecycleOperator{}
+	if getErr := r.Get(context.Background(), types.NamespacedName{Name: v1alpha1.MCPLifecycleOperatorInstanceName}, updated); getErr != nil {
+		t.Fatalf("failed to get updated CR: %v", getErr)
+	}
+
+	if updated.Status.Distribution.Name != "Standalone" {
+		t.Errorf("distribution name = %q, want %q", updated.Status.Distribution.Name, "Standalone")
+	}
+	if updated.Status.Distribution.Version != testOperatorVersion {
+		t.Errorf("distribution version = %q, want %q", updated.Status.Distribution.Version, testOperatorVersion)
+	}
+}
+
+func TestReconcile_Distribution_FallbackToPlatformVersionKey(t *testing.T) {
+	cr := newTestCR()
+	platformCM := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      platformConfigName,
+			Namespace: testPodNamespace,
+		},
+		Data: map[string]string{
+			platformVersionKey: "2.20.0",
+		},
+	}
+
+	r := newTestReconcilerFull(&fakeManifestProvider{}, testOperandImage, cr, platformCM)
+
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: v1alpha1.MCPLifecycleOperatorInstanceName},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	updated := &v1alpha1.MCPLifecycleOperator{}
+	if getErr := r.Get(context.Background(), types.NamespacedName{Name: v1alpha1.MCPLifecycleOperatorInstanceName}, updated); getErr != nil {
+		t.Fatalf("failed to get updated CR: %v", getErr)
+	}
+
+	if updated.Status.Distribution.Name != "Standalone" {
+		t.Errorf("distribution name = %q, want %q (no distribution.name key)", updated.Status.Distribution.Name, "Standalone")
+	}
+	if updated.Status.Distribution.Version != "2.20.0" {
+		t.Errorf("distribution version = %q, want %q (fallback to platformVersion)", updated.Status.Distribution.Version, "2.20.0")
 	}
 }
 

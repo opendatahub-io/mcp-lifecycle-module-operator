@@ -29,6 +29,16 @@ const (
 
 var _ platformcommon.PlatformObject = (*MCPLifecycleOperator)(nil)
 
+// Distribution describes the platform distribution context the module is
+// currently aligned to, per the module onboarding guide.
+// +kubebuilder:object:generate=true
+type Distribution struct {
+	// Name is the distribution name (e.g. SelfManagedRHOAI, OpenDataHub, Standalone).
+	Name string `json:"name,omitempty"`
+	// Version is the distribution version (e.g. 3.5.1, 0.0.0).
+	Version string `json:"version,omitempty"`
+}
+
 // MCPLifecycleOperatorSpec defines the desired state of MCPLifecycleOperator.
 type MCPLifecycleOperatorSpec struct {
 	platformcommon.ManagementSpec `json:",inline"`
@@ -39,6 +49,9 @@ type MCPLifecycleOperatorStatus struct {
 	platformcommon.Status `json:",inline"`
 
 	platformcommon.ComponentReleaseStatus `json:",inline"`
+
+	// Distribution is the platform distribution context the module is currently aligned to.
+	Distribution Distribution `json:"distribution,omitempty"`
 }
 
 //+kubebuilder:object:root=true
