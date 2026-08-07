@@ -77,6 +77,7 @@ const (
 )
 
 type platformConfig struct {
+	Available           bool
 	DistributionName    string
 	DistributionVersion string
 }
@@ -208,7 +209,9 @@ func (r *MCPLifecycleOperatorReconciler) reconcile(ctx context.Context, cr *v1al
 	cm.MarkTrue(v1alpha1.ConditionMCPLifecycleOperatorAvailable)
 	cm.AggregateReady()
 
-	r.setDistributionStatus(cr, pc)
+	if pc.Available {
+		r.setDistributionStatus(cr, pc)
+	}
 
 	return ctrl.Result{}, nil
 }
@@ -219,7 +222,10 @@ func (r *MCPLifecycleOperatorReconciler) reconcile(ctx context.Context, cr *v1al
 func (r *MCPLifecycleOperatorReconciler) updateBaseStatus(cr *v1alpha1.MCPLifecycleOperator, cm *v1alpha1.ConditionsManager, pc platformConfig) {
 	cr.Status.Status.ObservedGeneration = cr.Generation
 	cr.Status.Status.Phase = cm.Phase()
-	r.setReleases(cr, pc)
+
+	if pc.Available {
+		r.setReleases(cr, pc)
+	}
 }
 
 // setReleases populates the status.releases array with the module's own
@@ -420,9 +426,12 @@ func (r *MCPLifecycleOperatorReconciler) getPlatformConfig(ctx context.Context) 
 	if err := r.Get(ctx, types.NamespacedName{Namespace: r.PodNamespace, Name: platformConfigName}, cm); err != nil {
 		if !k8serr.IsNotFound(err) {
 			log.Error(err, "Failed to read platform config ConfigMap", "name", platformConfigName)
+
+			return platformConfig{}
 		}
 
 		return platformConfig{
+			Available:           true,
 			DistributionName:    distributionStandalone,
 			DistributionVersion: r.OperatorVersion,
 		}
@@ -437,8 +446,12 @@ func (r *MCPLifecycleOperatorReconciler) getPlatformConfig(ctx context.Context) 
 	if version == "" {
 		version = cm.Data[platformVersionKey]
 	}
+	if version == "" {
+		version = r.OperatorVersion
+	}
 
 	return platformConfig{
+		Available:           true,
 		DistributionName:    name,
 		DistributionVersion: version,
 	}

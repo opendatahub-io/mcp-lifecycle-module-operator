@@ -659,9 +659,12 @@ func TestReconcile_Distribution_NotSetOnFailure(t *testing.T) {
 
 	r := newTestReconciler(cli, &fakeManifestProvider{err: fmt.Errorf("render failed")}, testOperandImage)
 
-	_, _ = r.Reconcile(context.Background(), ctrl.Request{
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
 		NamespacedName: types.NamespacedName{Name: v1alpha1.MCPLifecycleOperatorInstanceName},
 	})
+	if err == nil {
+		t.Fatal("expected reconcile error, got nil")
+	}
 
 	updated := &v1alpha1.MCPLifecycleOperator{}
 	if getErr := r.Get(context.Background(), types.NamespacedName{Name: v1alpha1.MCPLifecycleOperatorInstanceName}, updated); getErr != nil {
