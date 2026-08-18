@@ -37,6 +37,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	platformcommon "github.com/opendatahub-io/odh-platform-utilities/api/common"
 	"github.com/opendatahub-io/odh-platform-utilities/pkg/deploy"
@@ -815,5 +817,100 @@ func TestCheckDeploymentsReady_AvailableConditionFallback(t *testing.T) {
 func TestReconcile_RequeueDelay(t *testing.T) {
 	if defaultRequeueDelay != 10*time.Second {
 		t.Errorf("defaultRequeueDelay = %v, want 10s", defaultRequeueDelay)
+	}
+}
+
+func TestReconcile_PlatformVersionUpdate(t *testing.T) {
+	cr := newTestCR()
+	platformCM := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      platformConfigName,
+			Namespace: testPodNamespace,
+		},
+		Data: map[string]string{
+			platformVersionKey: "2.20.0",
+		},
+	}
+	cli := fake.NewClientBuilder().
+		WithScheme(testScheme).
+		WithObjects(cr, platformCM).
+		WithStatusSubresource(cr).
+		Build()
+
+	r := newTestReconciler(cli, &fakeManifestProvider{err: fmt.Errorf("stop early")}, testOperandImage)
+
+	_, _ = r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: v1alpha1.MCPLifecycleOperatorInstanceName},
+	})
+
+	updated := &v1alpha1.MCPLifecycleOperator{}
+	if err := cli.Get(context.Background(), types.NamespacedName{Name: v1alpha1.MCPLifecycleOperatorInstanceName}, updated); err != nil {
+		t.Fatalf("failed to get updated CR: %v", err)
+	}
+
+	releasesByName := make(map[string]platformcommon.ComponentRelease)
+	for _, r := range updated.Status.ComponentReleaseStatus.Releases {
+		releasesByName[r.Name] = r
+	}
+	if v := releasesByName[platformReleaseName].Version; v != "2.20.0" {
+		t.Fatalf("initial platform version = %q, want %q", v, "2.20.0")
+	}
+
+	platformCM.Data[platformVersionKey] = "2.21.0"
+	if err := cli.Update(context.Background(), platformCM); err != nil {
+		t.Fatalf("failed to update ConfigMap: %v", err)
+	}
+
+	_, _ = r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: v1alpha1.MCPLifecycleOperatorInstanceName},
+	})
+
+	if err := cli.Get(context.Background(), types.NamespacedName{Name: v1alpha1.MCPLifecycleOperatorInstanceName}, updated); err != nil {
+		t.Fatalf("failed to get updated CR after ConfigMap change: %v", err)
+	}
+
+	releasesByName = make(map[string]platformcommon.ComponentRelease)
+	for _, r := range updated.Status.ComponentReleaseStatus.Releases {
+		releasesByName[r.Name] = r
+	}
+	if v := releasesByName[platformReleaseName].Version; v != "2.21.0" {
+		t.Errorf("platform version after ConfigMap update = %q, want %q", v, "2.21.0")
+	}
+}
+
+func TestPlatformConfigPredicate(t *testing.T) {
+	tests := []struct {
+		name    string
+		cmName  string
+		matched bool
+	}{
+		{
+			name:    "matches platform config ConfigMap",
+			cmName:  platformConfigName,
+			matched: true,
+		},
+		{
+			name:    "ignores unrelated ConfigMap",
+			cmName:  "some-other-configmap",
+			matched: false,
+		},
+	}
+
+	pred := predicate.NewPredicateFuncs(func(obj client.Object) bool {
+		return obj.GetName() == platformConfigName
+	})
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cm := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      tt.cmName,
+					Namespace: testPodNamespace,
+				},
+			}
+			if got := pred.Generic(event.GenericEvent{Object: cm}); got != tt.matched {
+				t.Errorf("predicate for %q = %v, want %v", tt.cmName, got, tt.matched)
+			}
+		})
 	}
 }
