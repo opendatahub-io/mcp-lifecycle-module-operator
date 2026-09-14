@@ -343,7 +343,10 @@ spec:
         image: original:latest
         env:
         - name: TLS_MIN_VERSION
-          value: "VersionTLS10"
+          valueFrom:
+            configMapKeyRef:
+              name: tls-settings
+              key: min-version
         - name: TLS_CIPHER_SUITES
           value: "old-cipher"
 `
@@ -371,7 +374,13 @@ spec:
 			envMap := make(map[string]string)
 			for _, e := range envSlice {
 				env := e.(map[string]interface{})
-				envMap[env["name"].(string)] = env["value"].(string)
+				name := env["name"].(string)
+				if _, found, _ := unstructured.NestedFieldNoCopy(env, "valueFrom"); found {
+					t.Errorf("env var %q still has valueFrom after replacement", name)
+				}
+				if value, found, _ := unstructured.NestedString(env, "value"); found {
+					envMap[name] = value
+				}
 			}
 
 			if envMap["TLS_MIN_VERSION"] != "VersionTLS13" {

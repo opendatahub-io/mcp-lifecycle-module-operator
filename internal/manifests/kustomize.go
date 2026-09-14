@@ -176,6 +176,7 @@ func setEnvVar(envSlice []interface{}, name, value string) []interface{} {
 			continue
 		}
 		if n, _, _ := unstructured.NestedString(env, "name"); n == name {
+			delete(env, "valueFrom")
 			env["value"] = value
 			envSlice[i] = env
 			return envSlice
