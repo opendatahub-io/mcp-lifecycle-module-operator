@@ -408,6 +408,19 @@ spec:
           name: mcp-lifecycle-operator-webhook-service
           namespace: mcp-lifecycle-operator-system
 ---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: mcp-lifecycle-operator-validating-webhook-configuration
+  annotations:
+    cert-manager.io/inject-ca-from: mcp-lifecycle-operator-system/mcp-lifecycle-operator-serving-cert
+webhooks:
+- name: vmcpserver.mcp.x-k8s.io
+  clientConfig:
+    service:
+      name: mcp-lifecycle-operator-webhook-service
+      namespace: mcp-lifecycle-operator-system
+---
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -443,6 +456,12 @@ func TestRewriteCertManagerNamespace(t *testing.T) {
 				"spec", "conversion", "webhook", "clientConfig", "service", "namespace")
 			if ns != "redhat-ods-applications" {
 				t.Errorf("conversion service namespace = %q, want %q", ns, "redhat-ods-applications")
+			}
+		case "ValidatingWebhookConfiguration":
+			got := obj.GetAnnotations()[certManagerInjectCAAnnotation]
+			want := "redhat-ods-applications/mcp-lifecycle-operator-serving-cert"
+			if got != want {
+				t.Errorf("inject-ca-from = %q, want %q", got, want)
 			}
 		case "Certificate":
 			dnsNames, _, _ := unstructured.NestedStringSlice(obj.Object, "spec", "dnsNames")
