@@ -106,6 +106,12 @@ E2E tests require a running Kubernetes cluster with the operator deployed. See t
 make e2e-test
 ```
 
+The suite expects the module operator and operand in the same namespace. It uses `mcp-lifecycle-module-operator-system` for the standalone Kind deployment. When the platform installs the module in its applications namespace, set `SYSTEM_NAMESPACE` to that namespace before running the suite:
+
+```bash
+SYSTEM_NAMESPACE=<applications-namespace> make e2e-test
+```
+
 ## CI
 
 GitHub Actions workflows run on this repository:

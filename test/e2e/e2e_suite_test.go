@@ -17,6 +17,7 @@ limitations under the License.
 package e2e
 
 import (
+	"context"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -25,6 +26,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -53,4 +55,10 @@ var _ = BeforeSuite(func() {
 
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme})
 	Expect(err).NotTo(HaveOccurred())
+
+	err = k8sClient.Get(context.Background(), types.NamespacedName{
+		Namespace: operandNamespace,
+		Name:      moduleOperatorDeployment,
+	}, &appsv1.Deployment{})
+	Expect(err).NotTo(HaveOccurred(), "module operator Deployment %q in namespace %q; set SYSTEM_NAMESPACE to the installed applications namespace", moduleOperatorDeployment, operandNamespace)
 })

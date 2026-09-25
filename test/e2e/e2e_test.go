@@ -17,7 +17,9 @@ limitations under the License.
 package e2e
 
 import (
+	"cmp"
 	"context"
+	"os"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -40,7 +42,6 @@ var (
 )
 
 const (
-	operandNamespace         = "mcp-lifecycle-module-operator-system"
 	operandDeployment        = "mcp-lifecycle-operator-controller-manager"
 	operandCRD               = "mcpservers.mcp.x-k8s.io"
 	moduleOperatorDeployment = "mcp-lifecycle-module-operator-controller-manager"
@@ -50,6 +51,8 @@ const (
 	consistentDuration = 30 * time.Second
 	consistentInterval = 5 * time.Second
 )
+
+var operandNamespace = cmp.Or(os.Getenv("SYSTEM_NAMESPACE"), "mcp-lifecycle-module-operator-system")
 
 var _ = Describe("MCPLifecycleOperator", func() {
 	ctx := context.Background()
