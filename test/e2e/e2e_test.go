@@ -228,6 +228,63 @@ var _ = Describe("MCPLifecycleOperator", func() {
 			g.Expect(updated.Status.Status.ObservedGeneration).To(Equal(updated.Generation))
 		}, timeout, interval).Should(Succeed())
 	})
+
+	It("reports Ready=False during an operand outage and recovers", func() {
+		createManagedCR(ctx)
+		waitForOperandReady(ctx)
+
+		By("Finding the operand Pod")
+		pods := &corev1.PodList{}
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.List(ctx, pods,
+				client.InNamespace(operandNamespace),
+				client.MatchingLabels{"app.kubernetes.io/name": "mcp-lifecycle-operator", "control-plane": "controller-manager"},
+			)).To(Succeed())
+			g.Expect(pods.Items).To(HaveLen(1))
+			g.Expect(pods.Items[0].DeletionTimestamp).To(BeNil())
+		}, timeout, interval).Should(Succeed())
+		pod := pods.Items[0].DeepCopy()
+		Expect(pod.Spec.Containers).To(HaveLen(1))
+		Expect(pod.Spec.Containers[0].Name).To(Equal("manager"))
+		DeferCleanup(func() {
+			err := k8sClient.Delete(ctx, pod)
+			Expect(err == nil || k8serr.IsNotFound(err)).To(BeTrue(), "delete patched operand Pod: %v", err)
+		})
+
+		By("Making only the running operand Pod unpullable")
+		original := pod.DeepCopy()
+		pod.Spec.Containers[0].Image = "registry.invalid/mcplmo-e2e/unpullable:latest"
+		Expect(k8sClient.Patch(ctx, pod, client.MergeFrom(original))).To(Succeed())
+
+		By("Verifying the operator reports the unavailable operand")
+		Eventually(func(g Gomega) {
+			dep := &appsv1.Deployment{}
+			g.Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: operandNamespace, Name: operandDeployment}, dep)).To(Succeed())
+			g.Expect(dep.Status.AvailableReplicas).To(Equal(int32(0)))
+
+			cr := &v1alpha1.MCPLifecycleOperator{}
+			g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: v1alpha1.MCPLifecycleOperatorInstanceName}, cr)).To(Succeed())
+			g.Expect(cr.Status.Conditions).To(ContainElements(
+				SatisfyAll(
+					HaveField("Type", string(v1alpha1.ConditionMCPLifecycleOperatorAvailable)),
+					HaveField("Status", metav1.ConditionFalse),
+					HaveField("Reason", "DeploymentNotReady"),
+				),
+				SatisfyAll(
+					HaveField("Type", string(platformcommon.ConditionTypeReady)),
+					HaveField("Status", metav1.ConditionFalse),
+				),
+				SatisfyAll(
+					HaveField("Type", string(platformcommon.ConditionTypeDegraded)),
+					HaveField("Status", metav1.ConditionFalse),
+				),
+			))
+		}, timeout, interval).Should(Succeed())
+
+		By("Deleting the patched Pod so the ReplicaSet creates a healthy replacement")
+		Expect(k8sClient.Delete(ctx, pod)).To(Succeed())
+		waitForOperandReady(ctx)
+	})
 })
 
 func createManagedCR(ctx context.Context) {
