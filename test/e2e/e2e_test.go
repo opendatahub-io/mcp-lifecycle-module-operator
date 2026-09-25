@@ -174,6 +174,39 @@ var _ = Describe("MCPLifecycleOperator", func() {
 			g.Expect(dep.Status.AvailableReplicas).To(BeNumerically(">=", int32(1)))
 		}, consistentDuration, consistentInterval).Should(Succeed())
 	})
+
+	It("should update observedGeneration to match generation after a spec change", func() {
+		createManagedCR(ctx)
+		waitForOperandReady(ctx)
+
+		By("Recording the current generation of the CR")
+		cr := &v1alpha1.MCPLifecycleOperator{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Name: v1alpha1.MCPLifecycleOperatorInstanceName,
+		}, cr)).To(Succeed())
+		genBefore := cr.Generation
+
+		By("Changing ManagementState to trigger a spec update")
+		Eventually(func(g Gomega) {
+			fresh := &v1alpha1.MCPLifecycleOperator{}
+			g.Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name: v1alpha1.MCPLifecycleOperatorInstanceName,
+			}, fresh)).To(Succeed())
+			fresh.Spec.ManagementState = platformcommon.Removed
+			g.Expect(k8sClient.Update(ctx, fresh)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		By("Verifying observedGeneration catches up to the new generation")
+		Eventually(func(g Gomega) {
+			updated := &v1alpha1.MCPLifecycleOperator{}
+			g.Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name: v1alpha1.MCPLifecycleOperatorInstanceName,
+			}, updated)).To(Succeed())
+
+			g.Expect(updated.Generation).To(BeNumerically(">", genBefore))
+			g.Expect(updated.Status.Status.ObservedGeneration).To(Equal(updated.Generation))
+		}, timeout, interval).Should(Succeed())
+	})
 })
 
 func createManagedCR(ctx context.Context) {
