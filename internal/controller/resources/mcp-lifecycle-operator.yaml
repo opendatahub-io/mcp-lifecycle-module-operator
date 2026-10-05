@@ -5366,7 +5366,7 @@ spec:
       - name: cert
         secret:
           defaultMode: 420
-          secretName: webhook-server-cert
+          secretName: mcplo-webhook-server-cert
 ---
 apiVersion: cert-manager.io/v1
 kind: Certificate
@@ -5383,7 +5383,7 @@ spec:
   issuerRef:
     kind: Issuer
     name: mcp-lifecycle-operator-selfsigned-issuer
-  secretName: webhook-server-cert
+  secretName: mcplo-webhook-server-cert
 ---
 apiVersion: cert-manager.io/v1
 kind: Issuer
