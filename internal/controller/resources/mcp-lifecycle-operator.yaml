@@ -5404,7 +5404,7 @@ metadata:
     app.kubernetes.io/name: mcp-lifecycle-operator
     control-plane: controller-manager
   name: mcp-lifecycle-operator-controller-manager-metrics-monitor
-  namespace: system
+  namespace: mcp-lifecycle-operator-system
 spec:
   endpoints:
   - bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
@@ -5437,7 +5437,10 @@ spec:
   - from:
     - namespaceSelector:
         matchLabels:
-          metrics: enabled
+          kubernetes.io/metadata.name: openshift-monitoring
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: openshift-user-workload-monitoring
     ports:
     - port: 8443
       protocol: TCP
