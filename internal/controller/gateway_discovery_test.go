@@ -191,6 +191,12 @@ func TestDiscoverMCPGateways_SingleExtensionWithGateway(t *testing.T) {
 					"protocol": "HTTPS",
 				},
 				map[string]interface{}{
+					"name":     "direct-http",
+					"hostname": "mcp.example.com",
+					"port":     int64(80),
+					"protocol": "HTTP",
+				},
+				map[string]interface{}{
 					"name":     "admin",
 					"hostname": "admin.example.com",
 					"port":     int64(443),
@@ -228,14 +234,17 @@ func TestDiscoverMCPGateways_SingleExtensionWithGateway(t *testing.T) {
 	if entry.Gateway.Name != "my-gw" || entry.Gateway.Namespace != "gw-system" {
 		t.Errorf("unexpected Gateway identity: %s/%s", entry.Gateway.Namespace, entry.Gateway.Name)
 	}
-	if len(entry.Gateway.Listeners) != 2 {
-		t.Fatalf("expected 2 wildcard listeners, got %d", len(entry.Gateway.Listeners))
+	if len(entry.Gateway.Listeners) != 3 {
+		t.Fatalf("expected 3 listeners (2 wildcard + 1 direct HTTP), got %d", len(entry.Gateway.Listeners))
 	}
 	if entry.Gateway.Listeners[0].Name != "mcp" || entry.Gateway.Listeners[0].Hostname != "*.mcp.example.com" {
 		t.Errorf("unexpected listener[0]: %+v", entry.Gateway.Listeners[0])
 	}
 	if entry.Gateway.Listeners[1].Name != "mcps" || entry.Gateway.Listeners[1].Hostname != "*.mcps.example.com" {
 		t.Errorf("unexpected listener[1]: %+v", entry.Gateway.Listeners[1])
+	}
+	if entry.Gateway.Listeners[2].Name != "direct-http" || entry.Gateway.Listeners[2].Hostname != "mcp.example.com" {
+		t.Errorf("unexpected listener[2]: %+v", entry.Gateway.Listeners[2])
 	}
 }
 
@@ -341,7 +350,7 @@ func TestDiscoverMCPGateways_DefaultNamespace(t *testing.T) {
 	}
 }
 
-func TestDiscoverMCPGateways_NonWildcardListenersFiltered(t *testing.T) {
+func TestDiscoverMCPGateways_ListenerFiltering(t *testing.T) {
 	mcpge := newMCPGatewayExtension("ns1", "my-ext", "my-gw", "ns1", "mcp", true)
 
 	gw := &unstructured.Unstructured{Object: map[string]interface{}{
@@ -352,13 +361,19 @@ func TestDiscoverMCPGateways_NonWildcardListenersFiltered(t *testing.T) {
 			"gatewayClassName": "istio",
 			"listeners": []interface{}{
 				map[string]interface{}{
-					"name":     "wildcard",
+					"name":     "wildcard-https",
 					"hostname": "*.mcp.example.com",
 					"port":     int64(443),
 					"protocol": "HTTPS",
 				},
 				map[string]interface{}{
-					"name":     "specific",
+					"name":     "direct-http",
+					"hostname": "mcp.example.com",
+					"port":     int64(80),
+					"protocol": "HTTP",
+				},
+				map[string]interface{}{
+					"name":     "direct-https",
 					"hostname": "api.example.com",
 					"port":     int64(443),
 					"protocol": "HTTPS",
@@ -389,15 +404,18 @@ func TestDiscoverMCPGateways_NonWildcardListenersFiltered(t *testing.T) {
 	if len(result) != 1 {
 		t.Fatalf("expected 1 entry, got %d", len(result))
 	}
-	if len(result[0].Gateway.Listeners) != 1 {
-		t.Fatalf("expected 1 wildcard listener, got %d", len(result[0].Gateway.Listeners))
+	if len(result[0].Gateway.Listeners) != 2 {
+		t.Fatalf("expected 2 listeners (wildcard HTTPS + direct HTTP), got %d", len(result[0].Gateway.Listeners))
 	}
-	if result[0].Gateway.Listeners[0].Name != "wildcard" || result[0].Gateway.Listeners[0].Hostname != "*.mcp.example.com" {
-		t.Errorf("unexpected listener: %+v", result[0].Gateway.Listeners[0])
+	if result[0].Gateway.Listeners[0].Name != "wildcard-https" || result[0].Gateway.Listeners[0].Hostname != "*.mcp.example.com" {
+		t.Errorf("unexpected listener[0]: %+v", result[0].Gateway.Listeners[0])
+	}
+	if result[0].Gateway.Listeners[1].Name != "direct-http" || result[0].Gateway.Listeners[1].Hostname != "mcp.example.com" {
+		t.Errorf("unexpected listener[1]: %+v", result[0].Gateway.Listeners[1])
 	}
 }
 
-func TestDiscoverMCPGateways_AllNonWildcardListeners(t *testing.T) {
+func TestDiscoverMCPGateways_NoUsableListeners(t *testing.T) {
 	mcpge := newMCPGatewayExtension("ns1", "my-ext", "my-gw", "ns1", "mcp", true)
 
 	gw := &unstructured.Unstructured{Object: map[string]interface{}{
@@ -408,7 +426,7 @@ func TestDiscoverMCPGateways_AllNonWildcardListeners(t *testing.T) {
 			"gatewayClassName": "istio",
 			"listeners": []interface{}{
 				map[string]interface{}{
-					"name":     "specific",
+					"name":     "direct-https",
 					"hostname": "api.example.com",
 					"port":     int64(443),
 					"protocol": "HTTPS",
@@ -440,7 +458,7 @@ func TestDiscoverMCPGateways_AllNonWildcardListeners(t *testing.T) {
 		t.Fatalf("expected 1 entry, got %d", len(result))
 	}
 	if len(result[0].Gateway.Listeners) != 0 {
-		t.Errorf("expected empty listeners when no wildcard hostnames, got %d", len(result[0].Gateway.Listeners))
+		t.Errorf("expected empty listeners, got %d", len(result[0].Gateway.Listeners))
 	}
 }
 

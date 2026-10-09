@@ -171,15 +171,29 @@ func (r *MCPLifecycleOperatorReconciler) resolveGatewayListeners(ctx context.Con
 		return nil, fmt.Errorf("unmarshalling Gateway %s/%s: %w", namespace, name, err)
 	}
 
+	// Only listeners that are usable for MCP HTTPRoute creation are included.
+	// Wildcard listeners (e.g. *.mcp.local) work with any protocol and allow
+	// per-server hostnames. Direct hostname listeners (e.g. mcp.example.com)
+	// only work with HTTP because HTTPS requires wildcard hostnames for
+	// per-server routing via TLS filter chains (see routing.md in mcp-gateway).
+	// Listeners without a hostname are excluded as no route hostname can be
+	// constructed from them.
 	var listeners []v1alpha1.ListenerRef
 	for _, l := range gw.Spec.Listeners {
-		if l.Hostname == nil || !strings.HasPrefix(string(*l.Hostname), "*.") {
+		if l.Hostname == nil {
+			continue
+		}
+		hostname := string(*l.Hostname)
+		switch {
+		case strings.HasPrefix(hostname, "*."):
+		case l.Protocol == gatewayv1.HTTPProtocolType && hostname != "":
+		default:
 			continue
 		}
 
 		listeners = append(listeners, v1alpha1.ListenerRef{
 			Name:     string(l.Name),
-			Hostname: string(*l.Hostname),
+			Hostname: hostname,
 		})
 	}
 
