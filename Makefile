@@ -10,10 +10,12 @@ CLEAN_TARGETS ?= $(OUTPUT)
 
 MCPLO_OPERAND_IMAGE ?= quay.io/opendatahub/odh-mcp-lifecycle-operator:odh-stable
 
-MCPLO_REPO ?= https://github.com/opendatahub-io/mcp-lifecycle-operator
-MCPLO_REF ?= main
+# Match the source release branch; development branches default to main.
+MCPLO_REF ?= $(shell git branch --show-current 2>/dev/null | grep -E '^main$$|^rhoai-' || printf main)
+export MCPLO_REF
 
-CONTAINER_TOOL ?= docker
+CONTAINER_TOOL ?= $(shell command -v podman >/dev/null 2>&1 && echo podman || echo docker)
+export KIND_EXPERIMENTAL_PROVIDER := $(CONTAINER_TOOL)
 
 ifeq (,$(shell go env GOBIN))
 GOBIN=$(shell go env GOPATH)/bin
@@ -40,11 +42,11 @@ clean: ## Clean up all build artifacts
 
 .PHONY: manifests
 manifests: controller-gen ## Generate ClusterRole and CustomResourceDefinition objects.
-	$(CONTROLLER_GEN) rbac:roleName=manager-role crd paths="./..." output:crd:artifacts:config=config/crd/bases output:rbac:artifacts:config=config/rbac
+	$(CONTROLLER_GEN) rbac:roleName=manager-role crd paths="./api/...;./internal/...;./cmd/..." output:crd:artifacts:config=config/crd/bases output:rbac:artifacts:config=config/rbac
 
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy implementations.
-	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
+	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./api/...;./internal/...;./cmd/..."
 
 .PHONY: fmt
 fmt: ## Run go fmt against code.
@@ -60,6 +62,8 @@ tidy: ## Tidy Go dependencies.
 
 .PHONY: verify
 verify: manifests generate fmt tidy ## Verify generated code, formatting, and dependencies are up-to-date.
+	go test ./tools/source-update
+	go run ./tools/source-update verify
 	@if ! git diff --exit-code --name-only || [ -n "$$(git ls-files --others --exclude-standard)" ]; then \
 		echo "ERROR: generated files are out of date. Run 'make manifests generate fmt' and commit the result."; \
 		echo -e '\nDifference:\n'; \
@@ -75,11 +79,11 @@ test: manifests generate fmt vet ## Run tests with coverage.
 
 .PHONY: unit-test
 unit-test: ## Run unit tests (no codegen prerequisites).
-	go test ./internal/... ./cmd/...
+	go test ./internal/... ./cmd/... ./tools/source-update
 
 .PHONY: kind-create
 kind-create: ## Create a Kind cluster with a local registry.
-	hack/create-kind-cluster.sh
+	hack/create-kind-cluster.sh --container-tool $(CONTAINER_TOOL)
 
 .PHONY: kind-delete
 kind-delete: ## Delete the Kind cluster.
@@ -148,17 +152,8 @@ undeploy: kustomize ## Undeploy controller from the K8s cluster.
 ##@ Operand Manifests
 
 .PHONY: update-operand-manifests
-update-operand-manifests: ## Vendor MCPLO manifests.
-	$(eval TMP := $(shell mktemp -d))
-	git clone --depth 1 --branch "$(MCPLO_REF)" "$(MCPLO_REPO)" "$(TMP)"
-	# For productization, we need to have the full kustomize ready manifests from MCPLO
-	rm -rf config/manifests/mcp-lifecycle-operator
-	mkdir -p config/manifests/mcp-lifecycle-operator
-	cp -r "$(TMP)/config/." config/manifests/mcp-lifecycle-operator/
-	# Update MCPLO manifests
-	$(MAKE) -C "$(TMP)" -f Makefile-ocp.mk build-installer
-	cp "$(TMP)/dist/install.yaml" internal/controller/resources/mcp-lifecycle-operator.yaml
-	rm -rf "$(TMP)"
+update-operand-manifests: ## Synchronize the MCPLO pin and generated manifests from one source commit.
+	go run ./tools/source-update update
 
 RPM_LOCKFILE_IMAGE ?= rpm-lockfile-prototype:local
 

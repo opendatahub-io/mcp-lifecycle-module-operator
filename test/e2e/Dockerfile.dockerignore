@@ -1,0 +1,8 @@
+# The E2E image compiles test files, which the root .dockerignore excludes.
+**
+!**/*.go
+!go.mod
+!go.sum
+!api/
+!internal/
+!test/

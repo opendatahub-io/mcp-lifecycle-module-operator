@@ -1,0 +1,22 @@
+name: Provision RHOAI module release branches
+
+on:
+  schedule:
+    - cron: '17 */2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  provision:
+    uses: opendatahub-io/mcp-lifecycle-operator/.github/workflows/midstream-only-rhoai-releases.yml@main
+    with:
+      downstream-repository: red-hat-data-services/mcp-lifecycle-module-operator
+      manifest-prefix: odh-mcp-lifecycle-module-operator
+      image-repository: quay.io/opendatahub/odh-mcp-lifecycle-module-operator
+      # MCPLMO's E2E image starts with 3.6; older releases and its earlier EA builds had none.
+      excluded-branches: |
+        rhoai-3.5
+        rhoai-3.6-ea.1
+        rhoai-3.6-ea.2
