@@ -18,7 +18,9 @@ package e2e
 
 import (
 	"context"
+	"os"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -28,6 +30,8 @@ import (
 	discoveryv1 "k8s.io/api/discovery/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
@@ -36,24 +40,34 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	v1alpha1 "github.com/opendatahub-io/mcp-lifecycle-module-operator/api/v1alpha1"
+	platformcommon "github.com/opendatahub-io/odh-platform-utilities/api/common"
 )
 
-var (
-	k8sClient client.Client
-	// restConfig is the loaded kubeconfig, kept so specs can build a clientset for
-	// subresource requests (e.g. the Service proxy used to probe the operand metrics
-	// endpoint) that the controller-runtime client does not expose.
-	restConfig *rest.Config
+var restConfig *rest.Config
+var k8sClient client.Client
+
+const (
+	operandDeployment        = "mcp-lifecycle-operator-controller-manager"
+	operandCRD               = "mcpservers.mcp.x-k8s.io"
+	moduleOperatorDeployment = "mcp-lifecycle-module-operator-controller-manager"
+
+	timeout            = 5 * time.Minute
+	interval           = 5 * time.Second
+	consistentDuration = 30 * time.Second
+	consistentInterval = 5 * time.Second
 )
+
+var operandNamespace string
 
 func TestE2E(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "E2E Suite")
+	RunSpecs(t, "MCPLMO E2E Suite")
 }
 
 var _ = BeforeSuite(func() {
 	logf.SetLogger(GinkgoLogr)
-
+	config, _ := GinkgoConfiguration()
+	Expect(config.ParallelTotal).To(Equal(1), "MCPLMO tests require one Ginkgo process and exclusive access to the MCP component")
 	scheme := runtime.NewScheme()
 	Expect(admissionv1.AddToScheme(scheme)).To(Succeed())
 	Expect(corev1.AddToScheme(scheme)).To(Succeed())
@@ -68,14 +82,57 @@ var _ = BeforeSuite(func() {
 		&clientcmd.ConfigOverrides{},
 	).ClientConfig()
 	Expect(err).NotTo(HaveOccurred())
+	cfg.Timeout = 30 * time.Second
 	restConfig = cfg
 
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme})
 	Expect(err).NotTo(HaveOccurred())
+	ctx := context.Background()
+	By("Discovering the prepared module installation namespace")
+	operandNamespace, err = discoverSystemNamespace(ctx, k8sClient, os.Getenv("SYSTEM_NAMESPACE"))
+	Expect(err).NotTo(HaveOccurred())
+	GinkgoWriter.Printf("Using system namespace %q\n", operandNamespace)
 
-	err = k8sClient.Get(context.Background(), types.NamespacedName{
-		Namespace: operandNamespace,
-		Name:      moduleOperatorDeployment,
-	}, &appsv1.Deployment{})
-	Expect(err).NotTo(HaveOccurred(), "module operator Deployment %q in namespace %q; set SYSTEM_NAMESPACE to the installed applications namespace", moduleOperatorDeployment, operandNamespace)
+	By("Checking the prepared module installation and Managed singleton")
+	Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: operandNamespace, Name: moduleOperatorDeployment}, &appsv1.Deployment{})).To(Succeed())
+	cr := &v1alpha1.MCPLifecycleOperator{}
+	Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "default"}, cr)).To(Succeed(), "create MCPLifecycleOperator/default before running tests")
+	Expect(cr.DeletionTimestamp).To(BeNil())
+	Expect(cr.Spec.ManagementState).To(Equal(platformcommon.Managed), "prepare the singleton as Managed before running tests")
+	waitForOperandReady(ctx)
 })
+
+func prepareTest() {
+	waitForOperandReady(context.Background())
+}
+
+func createTestNamespace(ctx context.Context, prefix string) string {
+	namespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{GenerateName: prefix}}
+	Expect(k8sClient.Create(ctx, namespace)).To(Succeed())
+	DeferCleanup(func() {
+		uid := namespace.UID
+		err := k8sClient.Delete(ctx, namespace, client.Preconditions{UID: &uid})
+		Expect(err == nil || apierrors.IsNotFound(err)).To(BeTrue(), "delete fixture namespace: %v", err)
+		Eventually(func() bool {
+			return apierrors.IsNotFound(k8sClient.Get(ctx, types.NamespacedName{Name: namespace.Name}, &corev1.Namespace{}))
+		}, timeout, interval).Should(BeTrue(), "fixture namespace %s still exists", namespace.Name)
+	})
+	return namespace.Name
+}
+
+func waitForOperandReady(ctx context.Context) {
+	By("Waiting for the operand namespace to be created")
+	Eventually(func(g Gomega) {
+		ns := &corev1.Namespace{}
+		g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: operandNamespace}, ns)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+
+	By("Waiting for the operand CRD to be installed")
+	Eventually(func(g Gomega) {
+		crd := &extv1.CustomResourceDefinition{}
+		g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: operandCRD}, crd)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+
+	By("Waiting for the operand rollout and readiness propagation")
+	Eventually(func() error { return checkReadiness(ctx) }, timeout, interval).Should(Succeed())
+}

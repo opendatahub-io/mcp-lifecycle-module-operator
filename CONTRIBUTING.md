@@ -16,7 +16,7 @@ Run `make help` for the full list. Key targets:
 | Target | Description |
 |---|---|
 | `make build` | Build the manager binary (runs codegen + fmt + vet first) |
-| `make test` | Run all tests with coverage (runs codegen first) |
+| `make test` | Run unit tests with coverage (runs codegen first) |
 | `make unit-test` | Run unit tests only (no codegen prerequisites) |
 | `make manifests` | Generate CRD and RBAC YAML from kubebuilder markers |
 | `make generate` | Generate DeepCopy implementations |
@@ -100,17 +100,28 @@ make test
 
 ### E2E tests
 
-E2E tests require a running Kubernetes cluster with the operator deployed. See the Kind cluster workflow above, or check `.github/workflows/e2e.yml` for the full CI sequence.
+Set `KUBECONFIG` to your test cluster. Deploy the module operator and prepare a Managed `MCPLifecycleOperator/default` before running tests. The Kind workflow above includes the sample CR. On RHOAI, enable the MCP component through DSC before running the suite.
+
+The suite discovers the installation namespace from the module operator Deployment labels. Set `SYSTEM_NAMESPACE` to select a namespace explicitly when needed, such as when multiple installations exist. Discovery fails if no installation is found, multiple installations match, or the API request fails.
 
 ```bash
+# Kind: run all checks.
 make e2e-test
+
+# RHOAI: run all compatible checks.
+make e2e-test E2E_TEST_ARGS='-ginkgo.label-filter=!standalone'
 ```
 
-The suite expects the module operator and operand in the same namespace. It uses `mcp-lifecycle-module-operator-system` for the standalone Kind deployment. When the platform installs the module in its applications namespace, set `SYSTEM_NAMESPACE` to that namespace before running the suite:
+Labels:
 
-```bash
-SYSTEM_NAMESPACE=<applications-namespace> make e2e-test
-```
+- `lifecycle`: changes the singleton's management state, disrupts the operand Pod, or deletes the singleton. Requires a disposable installation and exclusive access to the component. Each test restores readiness during cleanup.
+- `standalone`: deletes the singleton and checks operand garbage collection. Requires an installation without a parent controller that recreates the singleton. Exclude this label on RHOAI.
+
+Unlabeled checks leave the singleton unchanged. Use one Ginkgo process. The suite leaves the installation running after tests.
+
+Install optional Gateway test prerequisites with `make deploy-gateway-crds`. Pass Ginkgo options through `E2E_TEST_ARGS`, such as `-ginkgo.v` or `-ginkgo.junit-report=/tmp/mcplmo-junit.xml`.
+
+The suite timeout defaults to 15 minutes. Override it with `E2E_TEST_TIMEOUT`, for example `make e2e-test E2E_TEST_TIMEOUT=30m`. Individual polling waits have a fixed 5-minute timeout.
 
 ## CI
 
