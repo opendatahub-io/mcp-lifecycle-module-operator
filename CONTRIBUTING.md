@@ -4,10 +4,10 @@
 
 - Go 1.26+
 - [Kind](https://kind.sigs.k8s.io/) (for local E2E testing)
-- Docker or Podman
+- Podman or Docker
 - `kubectl`
 
-Build tools (`kustomize`, `controller-gen`) are downloaded automatically into `./bin/` by the Makefile.
+Build tools (`kustomize`, `controller-gen`) are downloaded automatically into `./bin/` by the Makefile. Container targets prefer Podman when installed, otherwise Docker. Override with `CONTAINER_TOOL=docker` or `CONTAINER_TOOL=podman`.
 
 ## Make Targets
 
@@ -79,14 +79,16 @@ The operand (MCP Lifecycle Operator) manifests are vendored at `internal/control
 To update them:
 
 ```bash
-# From main branch (default)
+# Use main or the current release branch automatically
 make update-operand-manifests
 
-# From a specific tag or branch
+# Override with a specific branch, tag, or full commit SHA
 make update-operand-manifests MCPLO_REF=v0.2.0
 ```
 
-A GitHub Actions workflow (`.github/workflows/update-operand-manifests.yml`) runs this weekly and opens a PR if manifests changed.
+The Go updater in `tools/source-update` pins the MCPLO Go dependency and regenerates the copied configuration and embedded installer from the same immutable commit. On release branches, use the matching MCPLO release branch rather than `main`. The committed pin is also checked by `make verify`.
+
+A GitHub Actions workflow (`.github/workflows/update-operand-manifests.yml`) runs daily at 06:00 UTC on `main` and opens a PR for dependency or generated-file changes. Release updates currently require manual dispatch on the release branch.
 
 ## Testing
 
@@ -94,7 +96,11 @@ A GitHub Actions workflow (`.github/workflows/update-operand-manifests.yml`) run
 
 ```bash
 make unit-test
-# or with codegen prerequisites:
+```
+
+`make test` also includes the live-cluster E2E package. Run it only with an authorized test cluster configured:
+
+```bash
 make test
 ```
 
@@ -112,13 +118,17 @@ The suite expects the module operator and operand in the same namespace. It uses
 SYSTEM_NAMESPACE=<applications-namespace> make e2e-test
 ```
 
+### Containerized E2E suite
+
+See [MCPLMO E2E image](test/e2e/README.md) for external-cluster invocation, release tags, permissions, and the JUnit/log/artifact contract.
+
 ## CI
 
 GitHub Actions workflows run on this repository:
 
 - **E2E Tests** (`.github/workflows/e2e.yml`) - runs on PRs and pushes to `main`. Stands up a Kind cluster, deploys the operator, and runs E2E tests.
 - **Verify** (`.github/workflows/verify.yml`) - runs on PRs. Checks formatting, linting, and codegen freshness.
-- **Update Operand Manifests** (`.github/workflows/update-operand-manifests.yml`) - weekly cron and manual dispatch. Re-vendors operand manifests and opens a PR if they changed.
+- **Update Operand Manifests** (`.github/workflows/update-operand-manifests.yml`) - daily cron and manual dispatch. Updates the shared MCPLO pin and generated operand files together.
 
 Additionally, Tekton PipelineRuns in `.tekton/` handle Konflux/Red Hat builds for pull requests and pushes.
 

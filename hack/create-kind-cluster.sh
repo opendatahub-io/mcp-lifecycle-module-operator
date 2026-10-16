@@ -41,7 +41,8 @@ fi
 # Start a local registry if not already running.
 if [ "$("${CONTAINER_TOOL}" inspect -f '{{.State.Running}}' "${REGISTRY_NAME}" 2>/dev/null || true)" != 'true' ]; then
   echo "Starting local registry on port ${REGISTRY_PORT}..."
-  "${CONTAINER_TOOL}" run -d --restart=always -p "127.0.0.1:${REGISTRY_PORT}:5000" --name "${REGISTRY_NAME}" registry:2
+  # Use a bridge so rootless Podman can join the Kind network below.
+  "${CONTAINER_TOOL}" run -d --network bridge --restart=always -p "127.0.0.1:${REGISTRY_PORT}:5000" --name "${REGISTRY_NAME}" registry:2
 fi
 
 # Delete existing cluster if it exists.
