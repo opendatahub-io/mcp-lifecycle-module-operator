@@ -28,15 +28,15 @@ const maxRegistryResponse = 8 << 20
 var digestPattern = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 var authParamPattern = regexp.MustCompile(`([A-Za-z]+)="([^"]*)"`)
 
-// imagePinRecord keeps the mutable source-SHA tag's selected digest reproducible.
+// imagePinRecord locks the source commit and selected immutable operand image.
 type imagePinRecord struct {
 	SourceCommit string `json:"sourceCommit"`
 	Image        string `json:"image"`
 }
 
-func validateImagePin(record imagePinRecord, sourceCommit string) error {
-	if !fullSHA(sourceCommit) || record.SourceCommit != sourceCommit {
-		return fmt.Errorf("operand image pin source %q does not match Go source %q", record.SourceCommit, sourceCommit)
+func validateImagePin(record imagePinRecord) error {
+	if !fullSHA(record.SourceCommit) {
+		return fmt.Errorf("invalid operand image pin source commit %q; expected full commit SHA", record.SourceCommit)
 	}
 	if !validImageReference(record.Image) {
 		return fmt.Errorf("invalid pinned operand image %q; expected %s@sha256:<64 lowercase hex>", record.Image, imageRepository)
@@ -49,7 +49,7 @@ func validImageReference(image string) bool {
 	return ok && repository == imageRepository && digestPattern.MatchString(digest)
 }
 
-func readImagePin(filename, sourceCommit string) (imagePinRecord, error) {
+func readImagePin(filename string) (imagePinRecord, error) {
 	data, err := readBoundedFile(filename, maxRegistryResponse)
 	if err != nil {
 		return imagePinRecord{}, fmt.Errorf("read operand image pin: %w", err)
@@ -63,14 +63,14 @@ func readImagePin(filename, sourceCommit string) (imagePinRecord, error) {
 	if err := ensureJSONEOF(decoder); err != nil {
 		return imagePinRecord{}, fmt.Errorf("decode operand image pin: %w", err)
 	}
-	if err := validateImagePin(record, sourceCommit); err != nil {
+	if err := validateImagePin(record); err != nil {
 		return imagePinRecord{}, err
 	}
 	return record, nil
 }
 
 func writeImagePin(filename string, record imagePinRecord) error {
-	if err := validateImagePin(record, record.SourceCommit); err != nil {
+	if err := validateImagePin(record); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(record, "", "  ")

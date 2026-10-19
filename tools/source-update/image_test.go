@@ -312,7 +312,7 @@ func TestResolveOperandImageRetainsIndexAndRediscoversOnlyWhenAsked(t *testing.T
 	if err := writeImagePin(pinPath, imagePinRecord{SourceCommit: imageTestSource, Image: one}); err != nil {
 		t.Fatal(err)
 	}
-	pin, err := readImagePin(pinPath, imageTestSource)
+	pin, err := readImagePin(pinPath)
 	if err != nil || pin.Image != one || calls != 2 {
 		t.Fatalf("reading verification pin performed discovery or changed selection: %+v, calls=%d, err=%v", pin, calls, err)
 	}
@@ -323,7 +323,9 @@ func TestReadImagePinValidatesSourceAndImmutableImage(t *testing.T) {
 		name   string
 		record imagePinRecord
 	}{
-		{name: "wrong source", record: imagePinRecord{SourceCommit: strings.Repeat("a", 40), Image: testImage}},
+		{name: "short source", record: imagePinRecord{SourceCommit: "5892d3d", Image: testImage}},
+		{name: "nonhex source", record: imagePinRecord{SourceCommit: strings.Repeat("z", 40), Image: testImage}},
+		{name: "missing source", record: imagePinRecord{Image: testImage}},
 		{name: "tagged image", record: imagePinRecord{SourceCommit: imageTestSource, Image: imageRepository + ":latest"}},
 		{name: "wrong repository", record: imagePinRecord{SourceCommit: imageTestSource, Image: "example.com/operator@sha256:" + strings.Repeat("0", 64)}},
 		{name: "bad digest", record: imagePinRecord{SourceCommit: imageTestSource, Image: imageRepository + "@sha256:bad"}},
@@ -334,8 +336,8 @@ func TestReadImagePinValidatesSourceAndImmutableImage(t *testing.T) {
 			if err := os.WriteFile(filename, data, 0644); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := readImagePin(filename, imageTestSource); err == nil {
-				t.Fatal("readImagePin() unexpectedly accepted invalid association")
+			if _, err := readImagePin(filename); err == nil {
+				t.Fatal("readImagePin() unexpectedly accepted invalid lock")
 			}
 		})
 	}
@@ -343,8 +345,20 @@ func TestReadImagePinValidatesSourceAndImmutableImage(t *testing.T) {
 	if err := writeImagePin(filename, imagePinRecord{SourceCommit: imageTestSource, Image: testImage}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := readImagePin(filename, strings.Repeat("f", 40)); err == nil {
-		t.Fatal("readImagePin() accepted a mismatch with Go's origin SHA")
+	if pin, err := readImagePin(filename); err != nil || pin.SourceCommit != imageTestSource || pin.Image != testImage {
+		t.Fatalf("readImagePin() = %+v, %v", pin, err)
+	}
+	for _, data := range []string{
+		`null`, `{}`, `{"sourceCommit": 1}`, `{"unknown": true}`,
+		fmt.Sprintf(`{"sourceCommit": %q, "image": %q, "unknown": true}`, imageTestSource, testImage),
+		fmt.Sprintf(`{"sourceCommit": %q, "image": %q} {}`, imageTestSource, testImage),
+	} {
+		if err := os.WriteFile(filename, []byte(data), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := readImagePin(filename); err == nil {
+			t.Fatalf("readImagePin() accepted invalid JSON lock: %s", data)
+		}
 	}
 }
 

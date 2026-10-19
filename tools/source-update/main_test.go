@@ -1,7 +1,8 @@
 package main
 
 import (
-	"encoding/json"
+	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,61 +11,37 @@ import (
 	"testing"
 )
 
-func TestSourcePin(t *testing.T) {
-	version := "v0.0.0-20261014120423-4b22a898f27e"
-	mod := map[string]any{
-		"Require": []any{map[string]string{"Path": canonical, "Version": version}},
-		"Replace": []any{map[string]any{
-			"Old": map[string]string{"Path": canonical},
-			"New": map[string]string{"Path": fork, "Version": version},
-		}},
-	}
-	data, _ := json.Marshal(mod)
-	if got, err := sourcePin(data); err != nil || got != version {
-		t.Fatalf("sourcePin() = %q, %v", got, err)
-	}
-	for name, mutate := range map[string]func(map[string]any){
-		"missing requirement": func(m map[string]any) { m["Require"] = []any{} },
-		"missing replacement": func(m map[string]any) { m["Replace"] = []any{} },
-		"wrong module": func(m map[string]any) {
-			m["Replace"].([]any)[0].(map[string]any)["New"] = map[string]string{"Path": "example.test/wrong", "Version": version}
-		},
-		"different versions": func(m map[string]any) {
-			m["Replace"].([]any)[0].(map[string]any)["New"] = map[string]string{"Path": fork, "Version": "v1.2.3"}
-		},
-		"unversioned replacement": func(m map[string]any) {
-			m["Replace"].([]any)[0].(map[string]any)["New"] = map[string]string{"Path": fork}
-		},
+func TestDeployUsesEmbeddedImageUnlessOverridden(t *testing.T) {
+	key := "RELATED_IMAGE_ODH_MCP_LIFECYCLE_OPERATOR_IMAGE"
+	mirror := "mirror.example/operator@sha256:" + strings.Repeat("a", 64)
+	for _, tc := range []struct {
+		name, override, want string
+	}{
+		{"default", "", key + "-"},
+		{"empty", "MCPLO_OPERAND_IMAGE=", key + "-"},
+		{"whitespace", "MCPLO_OPERAND_IMAGE=   ", key + "-"},
+		{"mirror", "MCPLO_OPERAND_IMAGE=" + mirror, key + "=" + mirror},
 	} {
-		t.Run(name, func(t *testing.T) {
-			encoded, _ := json.Marshal(mod)
-			var copy map[string]any
-			_ = json.Unmarshal(encoded, &copy)
-			mutate(copy)
-			encoded, _ = json.Marshal(copy)
-			if _, err := sourcePin(encoded); err == nil {
-				t.Fatal("expected invalid pin to fail")
+		t.Run(tc.name, func(t *testing.T) {
+			args := []string{"--no-print-directory", "--dry-run", "--assume-old=manifests", "--assume-old=kustomize", "deploy"}
+			if tc.override != "" {
+				args = append(args, tc.override)
+			}
+			cmd := exec.Command("make", args...)
+			cmd.Dir = "../.."
+			for _, item := range generatorEnv() {
+				if !strings.HasPrefix(item, "MCPLO_OPERAND_IMAGE=") {
+					cmd.Env = append(cmd.Env, item)
+				}
+			}
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("deploy dry run: %v\n%s", err, out)
+			}
+			if !strings.HasSuffix(string(out), "\t"+tc.want+"\n") {
+				t.Fatalf("deploy did not render %q as its final argument:\n%s", tc.want, out)
 			}
 		})
-	}
-}
-
-func TestModuleInfoAcceptsGoVersionsAndRequiresFullOrigin(t *testing.T) {
-	commit := strings.Repeat("4b22a898f27e", 3) + "4b22"
-	for _, ver := range []string{"v0.1.0", "v0.0.0-20261014120423-4b22a898f27e", "v0.1.1-0.20261014120423-4b22a898f27e", "v0.2.0-rc.1.0.20261014120423-4b22a898f27e"} {
-		data, _ := json.Marshal(map[string]any{"Path": fork, "Version": ver, "Origin": map[string]string{"Hash": commit}})
-		path, gotVersion, gotCommit, err := moduleInfo(data)
-		if err != nil || path != fork || gotVersion != ver || gotCommit != commit {
-			t.Fatalf("moduleInfo(%s) = %q, %q, %q, %v", ver, path, gotVersion, gotCommit, err)
-		}
-	}
-	for _, tc := range []struct{ path, hash string }{
-		{"example.test/wrong", commit}, {fork, "4b22a898f27e"}, {fork, strings.Repeat("z", 40)},
-	} {
-		data, _ := json.Marshal(map[string]any{"Path": tc.path, "Version": "v1.0.0", "Origin": map[string]string{"Hash": tc.hash}})
-		if _, _, _, err := moduleInfo(data); err == nil {
-			t.Fatalf("moduleInfo accepted invalid provenance: %s", data)
-		}
 	}
 }
 
@@ -420,7 +397,7 @@ func TestWorkflowOutputSnapshotRestoresOriginalOnLaterFailure(t *testing.T) {
 	}
 }
 
-func TestUpdateMetadataFailureRollsBackModulesBeforeOutputInstall(t *testing.T) {
+func TestUpdateMetadataFailureLeavesModulesUntouchedBeforeOutputInstall(t *testing.T) {
 	root := t.TempDir()
 	modPath := filepath.Join(root, "go.mod")
 	oldMod := []byte("old module bytes\n")
@@ -452,35 +429,13 @@ func TestUpdateMetadataFailureRollsBackModulesBeforeOutputInstall(t *testing.T) 
 	if err := os.WriteFile(installerTarget, []byte("old installer"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	version := "v0.0.0-20261014120423-4b22a898f27e"
-	pinJSON, _ := json.Marshal(map[string]any{
-		"Require": []any{map[string]string{"Path": canonical, "Version": version}},
-		"Replace": []any{map[string]any{"Old": map[string]string{"Path": canonical}, "New": map[string]string{"Path": fork, "Version": version}}},
-	})
-	realCommand := command
-	t.Cleanup(func() { command = realCommand })
-	command = func(dir string, capture bool, name string, args ...string) ([]byte, error) {
-		if name != "go" {
-			return realCommand(dir, capture, name, args...)
-		}
-		switch {
-		case len(args) >= 3 && args[0] == "mod" && args[1] == "edit" && args[2] == "-json":
-			return pinJSON, nil
-		case len(args) >= 2 && args[0] == "mod" && args[1] == "edit":
-			return nil, os.WriteFile(modPath, []byte("updated module bytes\n"), 0640)
-		case len(args) >= 2 && args[0] == "mod" && args[1] == "tidy":
-			return nil, os.WriteFile(filepath.Join(root, "go.sum"), []byte("updated sum\n"), 0640)
-		default:
-			return nil, os.ErrInvalid
-		}
-	}
 	output := filepath.Join(root, "missing-directory", "github-output")
 	t.Setenv("GITHUB_OUTPUT", output)
-	if err := applyUpdate(root, version, strings.Repeat("a", 40), "test-ref", testImage, stagedConfig, stagedInstaller, stagedPin); err == nil {
+	if err := applyUpdate(root, strings.Repeat("a", 40), "test-ref", testImage, stagedConfig, stagedInstaller, stagedPin); err == nil {
 		t.Fatal("expected workflow-output open failure")
 	}
 	if got, err := os.ReadFile(modPath); err != nil || string(got) != string(oldMod) {
-		t.Fatalf("go.mod rollback = %q, %v", got, err)
+		t.Fatalf("go.mod changed = %q, %v", got, err)
 	}
 	if _, err := os.Stat(filepath.Join(root, "go.sum")); !os.IsNotExist(err) {
 		t.Fatalf("originally absent go.sum remains: %v", err)
@@ -490,6 +445,184 @@ func TestUpdateMetadataFailureRollsBackModulesBeforeOutputInstall(t *testing.T) 
 	}
 	if got, err := os.ReadFile(installerTarget); err != nil || string(got) != "old installer" {
 		t.Fatalf("installer changed before metadata succeeded: %q, %v", got, err)
+	}
+}
+
+func TestApplyUpdateLeavesModuleFilesUntouched(t *testing.T) {
+	for _, modulesPresent := range []bool{false, true} {
+		for _, failInstall := range []bool{false, true} {
+			t.Run(fmt.Sprintf("modules=%t/failure=%t", modulesPresent, failInstall), func(t *testing.T) {
+				root, stage := t.TempDir(), t.TempDir()
+				for _, name := range []string{"go.mod", "go.sum"} {
+					if modulesPresent {
+						if err := os.WriteFile(filepath.Join(root, name), []byte("untouched "+name), 0640); err != nil {
+							t.Fatal(err)
+						}
+					}
+				}
+				stagedConfig, stagedInstaller := filepath.Join(stage, "config"), filepath.Join(stage, "installer.yaml")
+				if err := os.Mkdir(stagedConfig, 0755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(stagedInstaller, []byte("new installer"), 0644); err != nil {
+					t.Fatal(err)
+				}
+				pin := stagedPin(t, stage)
+				output := filepath.Join(root, "github-output")
+				if err := os.WriteFile(output, []byte("previous=entry\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				t.Setenv("GITHUB_OUTPUT", output)
+				realRename := rename
+				t.Cleanup(func() { rename = realRename })
+				rename = func(old, new string) error {
+					if failInstall && new == filepath.Join(root, imagePin) {
+						return os.ErrPermission
+					}
+					return realRename(old, new)
+				}
+				if err := applyUpdate(root, imageTestSource, "test-ref", testImage, stagedConfig, stagedInstaller, pin); (err != nil) != failInstall {
+					t.Fatalf("applyUpdate() = %v, want failure %t", err, failInstall)
+				}
+				for _, name := range []string{"go.mod", "go.sum"} {
+					data, err := os.ReadFile(filepath.Join(root, name))
+					if modulesPresent {
+						info, statErr := os.Stat(filepath.Join(root, name))
+						if err != nil || string(data) != "untouched "+name || statErr != nil || info.Mode().Perm() != 0640 {
+							t.Fatalf("%s changed: %q, %v, %v", name, data, err, statErr)
+						}
+					} else if !os.IsNotExist(err) {
+						t.Fatalf("%s was created: %q, %v", name, data, err)
+					}
+				}
+				wantOutput := "previous=entry\n"
+				if !failInstall {
+					wantOutput += "source_commit=" + imageTestSource + "\noperand_image=" + testImage + "\n"
+				}
+				if got, err := os.ReadFile(output); err != nil || string(got) != wantOutput {
+					t.Fatalf("workflow output = %q, %v, want %q", got, err, wantOutput)
+				}
+			})
+		}
+	}
+}
+
+type forbiddenRegistryTransport struct{ t *testing.T }
+
+func (transport forbiddenRegistryTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	transport.t.Errorf("verification rediscovered registry image: %s", request.URL)
+	return nil, os.ErrPermission
+}
+
+func TestVerifyUsesSavedLockWithoutModuleOrRegistryResolution(t *testing.T) {
+	root, bin := t.TempDir(), t.TempDir()
+	if err := writeImagePin(filepath.Join(root, imagePin), imagePinRecord{SourceCommit: imageTestSource, Image: testImage}); err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range map[string]string{
+		"go":   "#!/bin/sh\n[ \"$*\" = 'env GOVERSION' ] || exit 1\nprintf 'go1.26.5\\n'\n",
+		"make": "#!/bin/sh\nmkdir -p \"$2/bin\"\ncp \"$TEST_KUSTOMIZE\" \"$2/bin/kustomize\"\n",
+		"kustomize": `#!/bin/sh
+case "$1" in
+  edit) printf '%s\n' "${4#controller=}" > selected-image ;;
+  build) read -r image < "$2/selected-image"; printf 'image: %s\n' "$image" ;;
+  *) exit 1 ;;
+esac
+`,
+	} {
+		if err := os.WriteFile(filepath.Join(bin, name), []byte(data), 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("TEST_KUSTOMIZE", filepath.Join(bin, "kustomize"))
+	realCommand, realTransport := command, http.DefaultTransport
+	t.Cleanup(func() { command, http.DefaultTransport = realCommand, realTransport })
+	http.DefaultTransport = forbiddenRegistryTransport{t}
+	checkoutMismatch := false
+	fetches := 0
+	command = func(dir string, capture bool, name string, args ...string) ([]byte, error) {
+		if name != "git" {
+			t.Fatalf("unexpected source/module command: %s %v", name, args)
+		}
+		if args[0] == "init" {
+			source := args[1]
+			for name, data := range map[string]string{"go.mod": "module example.test/source\n\ngo 1.26.3\n", "config/manifest.yaml": "config\n", "config/overlays/odh/kustomization.yaml": "resources: []\n"} {
+				filename := filepath.Join(source, name)
+				if err := os.MkdirAll(filepath.Dir(filename), 0755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filename, []byte(data), 0644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			return nil, nil
+		}
+		switch strings.Join(args[2:], " ") {
+		case "remote add origin " + repo, "checkout --detach FETCH_HEAD":
+			return nil, nil
+		case "fetch --depth=1 origin " + imageTestSource:
+			fetches++
+			return nil, nil
+		case "rev-parse FETCH_HEAD^{commit}":
+			return []byte(imageTestSource), nil
+		case "rev-parse HEAD":
+			if checkoutMismatch {
+				return []byte(strings.Repeat("f", 40)), nil
+			}
+			return []byte(imageTestSource), nil
+		default:
+			t.Fatalf("verification did not use saved commit: %v", args)
+			return nil, os.ErrInvalid
+		}
+	}
+	for name, data := range map[string]string{
+		config + "/manifest.yaml":                   "config\n",
+		config + "/overlays/odh/kustomization.yaml": "resources: []\n",
+		installer: "image: " + testImage + "\n",
+	} {
+		filename := filepath.Join(root, name)
+		if err := os.MkdirAll(filepath.Dir(filename), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filename, []byte(data), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := verify(root); err != nil {
+		t.Fatal(err)
+	}
+	checkoutMismatch = true
+	if err := verify(root); err == nil || !strings.Contains(err.Error(), "checkout mismatch") {
+		t.Fatalf("verify() accepted mismatched checkout: %v", err)
+	}
+	checkoutMismatch = false
+	for _, filename := range []string{filepath.Join(root, config, "manifest.yaml"), filepath.Join(root, installer)} {
+		original, err := os.ReadFile(filename)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filename, []byte("drift\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if err := verify(root); err == nil || !strings.Contains(err.Error(), "MCPLO_REF="+imageTestSource) {
+			t.Fatalf("verify() accepted drift: %v", err)
+		}
+		if err := os.WriteFile(filename, original, 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, imagePin), []byte(`{"sourceCommit":"short"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	before := fetches
+	if err := verify(root); err == nil || fetches != before {
+		t.Fatalf("verify() did not reject invalid lock before generation: fetches=%d, error=%v", fetches, err)
+	}
+	for _, name := range []string{"go.mod", "go.sum"} {
+		if _, err := os.Stat(filepath.Join(root, name)); !os.IsNotExist(err) {
+			t.Fatalf("verification created root %s: %v", name, err)
+		}
 	}
 }
 

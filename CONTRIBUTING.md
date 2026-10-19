@@ -63,6 +63,8 @@ make deploy IMAGE_REGISTRY=localhost:5001 IMAGE_TAG=dev
 kubectl apply -f config/samples/mcplifecycleoperator.yaml
 ```
 
+`make deploy` uses the operand digest embedded in the installer by default and clears any previous deployment override. To use a mirrored or custom operand image, pass `MCPLO_OPERAND_IMAGE=<image-reference>`. Platform-provided `RELATED_IMAGE_ODH_MCP_LIFECYCLE_OPERATOR_IMAGE` overrides remain supported at runtime.
+
 ## Code Generation
 
 This project uses [kubebuilder](https://book.kubebuilder.io/) markers for code generation:
@@ -86,9 +88,11 @@ make update-operand-manifests
 make update-operand-manifests MCPLO_REF=v0.2.0
 ```
 
-The Go updater in `tools/source-update` pins the MCPLO Go dependency and regenerates the copied configuration and embedded installer from the same immutable commit. During `update`, it resolves the public Quay tag named for that full source commit, validates the OCI index digest and every runnable platform image's source labels, then records the selected index reference and source SHA in `operand-image.json`. A missing published build or mismatched source fails before files are installed. The tag is mutable, so `verify` uses the committed image record and does not look up the tag again. `make verify` checks the record's source association and byte-compares regenerated config and installer output. This validates published labels and registry content hashes, not a cryptographic signature or provenance attestation. On release branches, use the matching MCPLO release branch rather than `main`.
+The Go updater in `tools/source-update` regenerates the copied configuration and embedded installer from one immutable source commit, without adding MCPLO to this module's Go dependencies. During `update`, it resolves the public Quay tag named for that full source commit, validates the OCI index digest and every runnable platform image's source/repository labels, then records the selected index reference and source SHA in `operand-image.json`. A missing published build or mismatched source fails before files are installed. Configuration, installer and image record are installed together, with rollback on failure.
 
-A GitHub Actions workflow (`.github/workflows/update-operand-manifests.yml`) runs daily at 06:00 UTC on `main` and opens a PR for dependency or generated-file changes. Release updates currently require manual dispatch on the release branch.
+The tag is mutable, so `go run ./tools/source-update verify` uses the committed source/image record and does not look up the tag again. It regenerates from that exact source and image and byte-compares the config and installer output. It still fetches pinned source and Go tooling; it is not an offline or disconnected-cluster test. Update-time checks validate published labels and registry content hashes, not cryptographic signatures or provenance attestations. On release branches, use the matching MCPLO release branch rather than `main`.
+
+A GitHub Actions workflow (`.github/workflows/update-operand-manifests.yml`) runs daily at 06:00 UTC on `main` and opens a PR for source/image record or generated-file changes. Release updates currently require manual dispatch on the release branch.
 
 ## Testing
 
@@ -124,7 +128,7 @@ GitHub Actions workflows run on this repository:
 
 - **E2E Tests** (`.github/workflows/e2e.yml`) - runs on PRs and pushes to `main`. Stands up a Kind cluster, deploys the operator, and runs E2E tests.
 - **Verify** (`.github/workflows/verify.yml`) - runs on PRs. Checks formatting, linting, and codegen freshness.
-- **Update Operand Manifests** (`.github/workflows/update-operand-manifests.yml`) - daily cron and manual dispatch. Updates the shared MCPLO pin and generated operand files together.
+- **Update Operand Manifests** (`.github/workflows/update-operand-manifests.yml`) - daily cron and manual dispatch. Updates the source/image record and generated operand files together.
 
 Additionally, Tekton PipelineRuns in `.tekton/` handle Konflux/Red Hat builds for pull requests and pushes.
 

@@ -8,7 +8,8 @@ COMMON_BUILD_ARGS += -trimpath -ldflags="-s -w"
 OUTPUT ?= ./bin/manager
 CLEAN_TARGETS ?= $(OUTPUT)
 
-MCPLO_OPERAND_IMAGE ?= quay.io/opendatahub/odh-mcp-lifecycle-operator:odh-stable
+# Leave empty to use the source-aligned digest from the embedded installer.
+MCPLO_OPERAND_IMAGE ?=
 
 # Match the source release branch; development branches default to main.
 MCPLO_REF ?= $(shell git branch --show-current 2>/dev/null | grep -E '^main$$|^rhoai-' || printf main)
@@ -39,6 +40,7 @@ help: ## Display this help.
 clean: ## Clean up all build artifacts
 	rm -rf $(CLEAN_TARGETS)
 
+# Generate only this operator's API and controller resources, not test dependencies.
 .PHONY: manifests
 manifests: controller-gen ## Generate ClusterRole and CustomResourceDefinition objects.
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd paths="./api/...;./internal/...;./cmd/..." output:crd:artifacts:config=config/crd/bases output:rbac:artifacts:config=config/rbac
@@ -142,7 +144,7 @@ deploy: manifests kustomize ## Deploy controller to the K8s cluster.
 	$(KUSTOMIZE) build config/default | kubectl apply -f -
 	kubectl set env -n mcp-lifecycle-module-operator-system \
 		deploy/mcp-lifecycle-module-operator-controller-manager \
-		RELATED_IMAGE_ODH_MCP_LIFECYCLE_OPERATOR_IMAGE=$(MCPLO_OPERAND_IMAGE)
+		RELATED_IMAGE_ODH_MCP_LIFECYCLE_OPERATOR_IMAGE$(if $(strip $(MCPLO_OPERAND_IMAGE)),=$(MCPLO_OPERAND_IMAGE),-)
 
 .PHONY: undeploy
 undeploy: kustomize ## Undeploy controller from the K8s cluster.
@@ -151,7 +153,7 @@ undeploy: kustomize ## Undeploy controller from the K8s cluster.
 ##@ Operand Manifests
 
 .PHONY: update-operand-manifests
-update-operand-manifests: ## Synchronize the MCPLO pin and generated manifests from one source commit.
+update-operand-manifests: ## Synchronize operand manifests and image from one source commit.
 	go run ./tools/source-update update
 
 RPM_LOCKFILE_IMAGE ?= rpm-lockfile-prototype:local
