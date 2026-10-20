@@ -61,6 +61,7 @@ jobs:
           token: ${{ steps.generate-token.outputs.token }}
           commit-message: "chore: update operand manifests from midstream"
           title: "chore: update operand manifests from midstream"
+          # tools/source-update writes these outputs to GITHUB_OUTPUT in the update step.
           body: |
             Synchronized operand source:
             Commit: `${{ steps.update.outputs.source_commit }}`
