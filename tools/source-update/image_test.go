@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -277,6 +278,49 @@ func TestResolveOperandImageUsesAnonymousQuayPullToken(t *testing.T) {
 	got, err := resolveOperandImageAt(server.URL, imageTestSource, server.Client())
 	if err != nil || got != imageRepository+"@"+fixture.rootDigest {
 		t.Fatalf("authenticated public pull = %q, %v", got, err)
+	}
+}
+
+func TestResolveOperandImageRejectsUntrustedChallengesBeforeTokenRequest(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		realm   string
+		service string
+		scope   string
+	}{
+		{name: "wrong realm", realm: "/untrusted/auth", service: "quay.io", scope: "repository:opendatahub/odh-mcp-lifecycle-operator:pull"},
+		{name: "wrong service", realm: "/v2/auth", service: "other.io", scope: "repository:opendatahub/odh-mcp-lifecycle-operator:pull"},
+		{name: "wrong repository", realm: "/v2/auth", service: "quay.io", scope: "repository:opendatahub/other:pull"},
+		{name: "missing scope", realm: "/v2/auth", service: "quay.io"},
+		{name: "widened actions", realm: "/v2/auth", service: "quay.io", scope: "repository:opendatahub/odh-mcp-lifecycle-operator:pull,push"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var unexpectedRequests atomic.Int32
+			var server *httptest.Server
+			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/v2/opendatahub/odh-mcp-lifecycle-operator/manifests/"+imageTestSource {
+					unexpectedRequests.Add(1)
+					w.WriteHeader(http.StatusForbidden)
+					return
+				}
+				if r.Method != http.MethodGet || r.Header.Get("Authorization") != "" {
+					t.Errorf("first registry request must be an anonymous GET: %s, authorization %q", r.Method, r.Header.Get("Authorization"))
+				}
+				challenge := fmt.Sprintf(`Bearer realm=%q,service=%q`, server.URL+tc.realm, tc.service)
+				if tc.scope != "" {
+					challenge += fmt.Sprintf(`,scope=%q`, tc.scope)
+				}
+				w.Header().Set("Www-Authenticate", challenge)
+				w.WriteHeader(http.StatusUnauthorized)
+			}))
+			defer server.Close()
+			if _, err := resolveOperandImageAt(server.URL, imageTestSource, server.Client()); err == nil || !strings.Contains(err.Error(), "does not match trusted Quay repository") {
+				t.Fatalf("untrusted challenge error = %v", err)
+			}
+			if got := unexpectedRequests.Load(); got != 0 {
+				t.Fatalf("made %d requests beyond the initial manifest GET, want no token request", got)
+			}
+		})
 	}
 }
 
