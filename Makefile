@@ -3,6 +3,8 @@ IMAGE_NAME ?= odh-mcp-lifecycle-module-operator
 IMAGE_TAG ?= odh-stable
 IMG ?= $(IMAGE_REGISTRY)/$(IMAGE_NAME):$(IMAGE_TAG)
 PLATFORM ?= linux/amd64
+E2E_TEST_ARGS ?=
+E2E_TEST_TIMEOUT ?= 15m
 CGO_ENABLED ?= 1
 COMMON_BUILD_ARGS += -trimpath -ldflags="-s -w"
 OUTPUT ?= ./bin/manager
@@ -73,12 +75,12 @@ verify: manifests generate fmt tidy ## Verify generated code, formatting, and de
 	fi
 
 .PHONY: test
-test: manifests generate fmt vet ## Run tests with coverage.
-	go test ./... -coverprofile cover.out
+test: manifests generate fmt vet ## Run unit tests with coverage.
+	go test ./api/... ./internal/... ./cmd/... ./tools/source-update -coverprofile cover.out
 
 .PHONY: unit-test
 unit-test: ## Run unit tests (no codegen prerequisites).
-	go test ./internal/... ./cmd/... ./tools/source-update
+	go test ./api/... ./internal/... ./cmd/... ./tools/source-update
 
 .PHONY: kind-create
 kind-create: ## Create a Kind cluster with a local registry.
@@ -92,8 +94,8 @@ GATEWAY_API_VERSION ?= v1.6.2
 MCP_GATEWAY_VERSION ?= v1.0.1
 
 .PHONY: e2e-test
-e2e-test: ## Run E2E tests (requires a deployed operator on a running cluster).
-	go test -count=1 ./test/e2e/ -v -timeout 15m
+e2e-test: ## Run E2E tests (requires a prepared Managed installation).
+	go test -count=1 ./test/e2e/ -v -timeout $(E2E_TEST_TIMEOUT) -args $(E2E_TEST_ARGS)
 
 .PHONY: deploy-gateway-crds
 deploy-gateway-crds: kustomize ## Install Gateway API and MCPGatewayExtension CRDs (no controllers).

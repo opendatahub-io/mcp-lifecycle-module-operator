@@ -38,8 +38,11 @@ jobs:
           kubectl rollout status deployment/mcp-lifecycle-module-operator-controller-manager \
             -n mcp-lifecycle-module-operator-system --timeout=120s
 
+      - name: Create module singleton
+        run: kubectl apply -f config/samples/mcplifecycleoperator.yaml
+
       - name: Run E2E tests
-        run: make e2e-test
+        run: SYSTEM_NAMESPACE=mcp-lifecycle-module-operator-system make e2e-test
 
       - name: Collect debug info
         if: failure()

@@ -19,7 +19,7 @@ Before committing, test locally following the table below:
 | `*.go` files | `make unit-test` | Unit tests (fast, no codegen) |
 | `*.go` files | `make test` | Unit tests with codegen + fmt + vet |
 | `api/` types or RBAC markers | `make manifests generate` | Regenerate CRDs, DeepCopy, and RBAC |
-| Significant changes | `make e2e-test` | E2E tests (Kind cluster required - see [CONTRIBUTING.md](CONTRIBUTING.md) for setup) |
+| Significant changes or E2E changes | `make e2e-test` | Prepared dedicated cluster; see [CONTRIBUTING.md](CONTRIBUTING.md) for prerequisites and test selection. |
 
 ## Key Architecture Rules
 
