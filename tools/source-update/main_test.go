@@ -11,6 +11,35 @@ import (
 	"testing"
 )
 
+func TestVerificationTargetsKeepSourceRegenerationExplicit(t *testing.T) {
+	for _, target := range []string{"verify", "verify-operand-manifests"} {
+		t.Run(target, func(t *testing.T) {
+			cmd := exec.Command("make", "--no-print-directory", "--dry-run", "--assume-old=manifests", "--assume-old=generate", "--assume-old=fmt", "--assume-old=tidy", target)
+			cmd.Dir, cmd.Env = "../..", generatorEnv()
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("%s dry run: %v\n%s", target, err, out)
+			}
+			regenerates := strings.Contains(string(out), "go run ./tools/source-update verify")
+			if regenerates != (target == "verify-operand-manifests") {
+				t.Fatalf("unexpected source regeneration in %s:\n%s", target, out)
+			}
+			if target == "verify" && !strings.Contains(string(out), "go test ./tools/source-update") {
+				t.Fatalf("local gate lost updater unit tests:\n%s", out)
+			}
+		})
+	}
+	workflow, err := os.ReadFile("../../.github/workflows/verify.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range []string{"verify", "verify-operand-manifests"} {
+		if !strings.Contains(string(workflow), "run: make "+target+"\n") {
+			t.Errorf("CI must explicitly run make %s", target)
+		}
+	}
+}
+
 func TestDeployUsesEmbeddedImageUnlessOverridden(t *testing.T) {
 	key := "RELATED_IMAGE_ODH_MCP_LIFECYCLE_OPERATOR_IMAGE"
 	mirror := "mirror.example/operator@sha256:" + strings.Repeat("a", 64)

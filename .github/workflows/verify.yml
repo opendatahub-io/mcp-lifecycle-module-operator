@@ -21,3 +21,6 @@ jobs:
 
       - name: Verify generated code is up-to-date
         run: make verify
+
+      - name: Verify operand manifests match pinned source and image
+        run: make verify-operand-manifests

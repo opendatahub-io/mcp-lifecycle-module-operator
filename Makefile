@@ -40,14 +40,13 @@ help: ## Display this help.
 clean: ## Clean up all build artifacts
 	rm -rf $(CLEAN_TARGETS)
 
-# Generate only this operator's API and controller resources, not test dependencies.
 .PHONY: manifests
 manifests: controller-gen ## Generate ClusterRole and CustomResourceDefinition objects.
-	$(CONTROLLER_GEN) rbac:roleName=manager-role crd paths="./api/...;./internal/...;./cmd/..." output:crd:artifacts:config=config/crd/bases output:rbac:artifacts:config=config/rbac
+	$(CONTROLLER_GEN) rbac:roleName=manager-role crd paths="./..." output:crd:artifacts:config=config/crd/bases output:rbac:artifacts:config=config/rbac
 
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy implementations.
-	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./api/...;./internal/...;./cmd/..."
+	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
 
 .PHONY: fmt
 fmt: ## Run go fmt against code.
@@ -64,7 +63,6 @@ tidy: ## Tidy Go dependencies.
 .PHONY: verify
 verify: manifests generate fmt tidy ## Verify generated code, formatting, and dependencies are up-to-date.
 	go test ./tools/source-update
-	go run ./tools/source-update verify
 	@if ! git diff --exit-code --name-only || [ -n "$$(git ls-files --others --exclude-standard)" ]; then \
 		echo "ERROR: generated files are out of date. Run 'make manifests generate fmt' and commit the result."; \
 		echo -e '\nDifference:\n'; \
@@ -155,6 +153,10 @@ undeploy: kustomize ## Undeploy controller from the K8s cluster.
 .PHONY: update-operand-manifests
 update-operand-manifests: ## Synchronize operand manifests and image from one source commit.
 	go run ./tools/source-update update
+
+.PHONY: verify-operand-manifests
+verify-operand-manifests: ## Verify operand outputs from saved source/image pins (fetches source and Go tooling).
+	go run ./tools/source-update verify
 
 RPM_LOCKFILE_IMAGE ?= rpm-lockfile-prototype:local
 

@@ -23,23 +23,22 @@ type registryFixture struct {
 }
 
 func makeRegistryFixture(t *testing.T, source string, architectures ...string) registryFixture {
-	return makeRegistryFixtureWithChildSources(t, source, nil, architectures...)
+	return makeRegistryFixtureWithChildLabels(t, source, nil, architectures...)
 }
 
-func makeRegistryFixtureWithChildSources(t *testing.T, source string, childSources []string, architectures ...string) registryFixture {
+func makeRegistryFixtureWithChildLabels(t *testing.T, source string, childLabels []map[string]string, architectures ...string) registryFixture {
 	t.Helper()
 	fixture := registryFixture{manifests: map[string][]byte{}, blobs: map[string][]byte{}}
 	var descriptors []map[string]any
 	for i, arch := range architectures {
-		childSource := source
-		if i < len(childSources) {
-			childSource = childSources[i]
-		}
 		labels := map[string]string{
-			"git.commit":                        childSource,
+			"git.commit":                        source,
 			"git.url":                           "https://github.com/opendatahub-io/mcp-lifecycle-operator",
-			"org.opencontainers.image.revision": childSource,
-			"vcs-ref":                           childSource,
+			"org.opencontainers.image.revision": source,
+			"vcs-ref":                           source,
+		}
+		if i < len(childLabels) && childLabels[i] != nil {
+			labels = childLabels[i]
 		}
 		config, err := json.Marshal(map[string]any{
 			"os": "linux", "architecture": arch,
@@ -178,6 +177,39 @@ func TestResolveOperandImageValidatesAllRunnablePlatforms(t *testing.T) {
 	}
 }
 
+func TestResolveOperandImageSourceLabels(t *testing.T) {
+	repository := "https://github.com/opendatahub-io/mcp-lifecycle-operator"
+	for _, key := range []string{"git.commit", "org.opencontainers.image.revision", "vcs-ref"} {
+		for _, tc := range []struct {
+			name    string
+			labels  map[string]string
+			wantErr string
+		}{
+			{name: "only recognized label", labels: map[string]string{key: imageTestSource, "git.url": repository}},
+			{name: "no recognized label", labels: map[string]string{"other.revision": imageTestSource, "git.url": repository}, wantErr: "no recognized source label"},
+			{name: "conflicting label", labels: map[string]string{"git.commit": imageTestSource, "org.opencontainers.image.revision": imageTestSource, "vcs-ref": imageTestSource, key: strings.Repeat("f", 40), "git.url": repository}, wantErr: "label " + key},
+			{name: "empty label", labels: map[string]string{"git.commit": imageTestSource, "org.opencontainers.image.revision": imageTestSource, "vcs-ref": imageTestSource, key: "", "git.url": repository}, wantErr: "label " + key},
+			{name: "missing repository", labels: map[string]string{key: imageTestSource}, wantErr: "git.url"},
+			{name: "wrong repository", labels: map[string]string{key: imageTestSource, "git.url": "https://example.com/other"}, wantErr: "git.url"},
+		} {
+			t.Run(key+"/"+tc.name, func(t *testing.T) {
+				// A matching first platform must not hide bad labels on another runnable platform.
+				fixture := makeRegistryFixtureWithChildLabels(t, imageTestSource, []map[string]string{nil, tc.labels}, "amd64", "arm64")
+				server := httptest.NewServer(fixture.handler(t, func() registryFixture { return fixture }, http.StatusOK, ""))
+				defer server.Close()
+				got, err := resolveOperandImageAt(server.URL, imageTestSource, server.Client())
+				if tc.wantErr != "" {
+					if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+						t.Fatalf("resolveOperandImageAt() = %q, %v, want error containing %q", got, err, tc.wantErr)
+					}
+				} else if err != nil || got != imageRepository+"@"+fixture.rootDigest {
+					t.Fatalf("resolveOperandImageAt() = %q, %v", got, err)
+				}
+			})
+		}
+	}
+}
+
 func TestResolveOperandImageRejectsIncompletePlatforms(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
@@ -190,7 +222,7 @@ func TestResolveOperandImageRejectsIncompletePlatforms(t *testing.T) {
 		{name: "unknown OS with real architecture", platform: map[string]string{"os": "unknown", "architecture": "arm64"}, fetches: 2},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			fixture := makeRegistryFixtureWithChildSources(t, imageTestSource, []string{imageTestSource, strings.Repeat("f", 40)}, "amd64", "arm64")
+			fixture := makeRegistryFixtureWithChildLabels(t, imageTestSource, []map[string]string{nil, {"git.commit": strings.Repeat("f", 40)}}, "amd64", "arm64")
 			setFixturePlatform(t, &fixture, 1, tc.platform)
 			fixtureHandler := fixture.handler(t, func() registryFixture { return fixture }, http.StatusOK, "")
 			childManifestRequests := 0

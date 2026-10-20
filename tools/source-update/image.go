@@ -242,10 +242,17 @@ func validatePlatformImage(ctx context.Context, client *http.Client, base *url.U
 		return fmt.Errorf("config platform %s/%s does not match index %s/%s", image.OS, image.Architecture, descriptor.Platform.OS, descriptor.Platform.Architecture)
 	}
 	labels := image.Config.Labels
+	hasSource := false
 	for _, key := range []string{"git.commit", "org.opencontainers.image.revision", "vcs-ref"} {
-		if labels[key] != sourceCommit {
-			return fmt.Errorf("image config label %s is %q, expected source %s", key, labels[key], sourceCommit)
+		if value, supplied := labels[key]; supplied {
+			if value != sourceCommit {
+				return fmt.Errorf("image config label %s is %q, expected source %s", key, value, sourceCommit)
+			}
+			hasSource = true
 		}
+	}
+	if !hasSource {
+		return fmt.Errorf("image config has no recognized source label")
 	}
 	if labels["git.url"] != "https://github.com/opendatahub-io/mcp-lifecycle-operator" {
 		return fmt.Errorf("image config git.url is %q, expected MCPLO source repository", labels["git.url"])
