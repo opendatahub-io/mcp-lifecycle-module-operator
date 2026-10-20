@@ -10,12 +10,10 @@ on:
   schedule:
     - cron: "0 6 * * *"
 
-permissions:
-  contents: write
-  pull-requests: write
-
 jobs:
   update-manifests:
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -53,7 +51,8 @@ jobs:
         with:
           app-id: ${{ secrets.ODH_RELEASE_BOT_APP_ID }}
           private-key: ${{ secrets.ODH_RELEASE_BOT_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
+          permission-contents: write
+          permission-pull-requests: write
 
       - name: Create Pull Request
         if: steps.changes.outputs.changed == 'true'
