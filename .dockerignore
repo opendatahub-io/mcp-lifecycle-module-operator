@@ -10,3 +10,7 @@
 !vendor/
 !Makefile
 !LICENSE
+# Remove these test re-inclusions once the per-Dockerfile ignore fix is deployed
+# on our Konflux instance: https://github.com/konflux-ci/konflux-build-cli/pull/208
+!test/
+!test/**
