@@ -122,7 +122,7 @@ docker-build: ## Build docker image with the manager.
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
-	$(CONTAINER_TOOL) push ${IMG}
+	$(CONTAINER_TOOL) push $(if $(and $(filter podman,$(CONTAINER_TOOL)),$(filter localhost:%,$(IMG))),--tls-verify=false) ${IMG}
 
 ##@ Deployment
 
