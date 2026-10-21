@@ -36,7 +36,7 @@ jobs:
         id: changes
         run: |
           paths="$(git status --porcelain --untracked-files=all -- \
-            operand-image.json config/manifests/mcp-lifecycle-operator \
+            go.mod go.sum operand-image.json config/manifests/mcp-lifecycle-operator \
             internal/controller/resources/mcp-lifecycle-operator.yaml)"
           if [[ -n "$paths" ]]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
@@ -65,6 +65,7 @@ jobs:
           body: |
             Synchronized operand source:
             Commit: `${{ steps.update.outputs.source_commit }}`
+            Go source version: `${{ steps.update.outputs.source_version }}`
             Operand image: `${{ steps.update.outputs.operand_image }}`
           branch: automated/update-operand-manifests-${{ github.ref_name }}
           base: ${{ github.ref_name }}

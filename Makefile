@@ -17,7 +17,8 @@ MCPLO_OPERAND_IMAGE ?=
 MCPLO_REF ?= $(shell git branch --show-current 2>/dev/null | grep -E '^main$$|^rhoai-' || printf main)
 export MCPLO_REF
 
-CONTAINER_TOOL ?= docker
+CONTAINER_TOOL ?= $(shell command -v podman >/dev/null 2>&1 && echo podman || echo docker)
+export KIND_EXPERIMENTAL_PROVIDER := $(CONTAINER_TOOL)
 
 ifeq (,$(shell go env GOBIN))
 GOBIN=$(shell go env GOPATH)/bin
@@ -84,7 +85,7 @@ unit-test: ## Run unit tests (no codegen prerequisites).
 
 .PHONY: kind-create
 kind-create: ## Create a Kind cluster with a local registry.
-	hack/create-kind-cluster.sh
+	hack/create-kind-cluster.sh --container-tool $(CONTAINER_TOOL)
 
 .PHONY: kind-delete
 kind-delete: ## Delete the Kind cluster.

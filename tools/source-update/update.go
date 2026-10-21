@@ -104,10 +104,66 @@ func (snapshot workflowOutputSnapshot) restore() error {
 	return nil
 }
 
-func update(root, ref string) error {
+type moduleFileSnapshot struct {
+	path   string
+	data   []byte
+	mode   fs.FileMode
+	exists bool
+}
+
+type moduleFilesSnapshot []moduleFileSnapshot
+
+func snapshotModuleFiles(root string) (moduleFilesSnapshot, error) {
+	files := make(moduleFilesSnapshot, 0, 2)
+	for _, name := range []string{"go.mod", "go.sum"} {
+		filename := filepath.Join(root, name)
+		data, err := os.ReadFile(filename)
+		if err != nil && !os.IsNotExist(err) {
+			return nil, err
+		}
+		file := moduleFileSnapshot{path: filename, data: data, exists: err == nil}
+		if file.exists {
+			info, err := os.Stat(filename)
+			if err != nil {
+				return nil, err
+			}
+			file.mode = info.Mode().Perm()
+		}
+		if name == "go.mod" && !file.exists {
+			return nil, fmt.Errorf("read go.mod: %w", os.ErrNotExist)
+		}
+		files = append(files, file)
+	}
+	return files, nil
+}
+
+func (files moduleFilesSnapshot) restore() error {
+	var errs []error
+	for _, file := range files {
+		if file.exists {
+			if err := restoreFile(file.path, file.data, file.mode); err != nil {
+				errs = append(errs, fmt.Errorf("restore %s: %w", filepath.Base(file.path), err))
+			}
+		} else if err := os.Remove(file.path); err != nil && !os.IsNotExist(err) {
+			errs = append(errs, fmt.Errorf("remove %s: %w", filepath.Base(file.path), err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+func update(root, ref string) (result error) {
 	if err := validateRef(ref); err != nil {
 		return err
 	}
+	moduleFiles, err := snapshotModuleFiles(root)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if result != nil {
+			result = errors.Join(result, moduleFiles.restore())
+		}
+	}()
 	stage, err := os.MkdirTemp("", "operand-update-")
 	if err != nil {
 		return err
@@ -118,12 +174,19 @@ func update(root, ref string) error {
 	if err != nil {
 		return err
 	}
-	selectedImage, err := resolveOperandImage(commit)
+	version, originCommit, err := moduleVersion(commit, root)
+	if err != nil {
+		return err
+	}
+	if originCommit != commit {
+		return fmt.Errorf("Go resolved %s@%s to source %s", fork, commit, originCommit)
+	}
+	selectedImage, err := resolveImage(originCommit)
 	if err != nil {
 		return err
 	}
 	generated := filepath.Join(stage, "generated")
-	configStage, installerStage, err := generate(commit, selectedImage, generated)
+	configStage, installerStage, err := generateOutputs(originCommit, selectedImage, generated)
 	if err != nil {
 		return err
 	}
@@ -131,30 +194,57 @@ func update(root, ref string) error {
 	if err := writeImagePin(pinStage, imagePinRecord{SourceCommit: commit, Image: selectedImage}); err != nil {
 		return err
 	}
-	return applyUpdate(root, commit, ref, selectedImage, configStage, installerStage, pinStage)
+	return applyUpdate(root, version, commit, ref, selectedImage, configStage, installerStage, pinStage)
 }
 
-func applyUpdate(root, commit, ref, selectedImage, configStage, installerStage, pinStage string) error {
+var resolveImage = resolveOperandImage
+var generateOutputs = generate
+
+func applyUpdate(root, version, commit, ref, selectedImage, configStage, installerStage, pinStage string) error {
+	moduleFiles, err := snapshotModuleFiles(root)
+	if err != nil {
+		return err
+	}
+	rollback := func(cause error) error {
+		return errors.Join(cause, moduleFiles.restore())
+	}
+	if _, err := command(root, false, "go", "mod", "edit", "-require="+canonical+"@"+placeholderVersion, "-replace="+canonical+"="+fork+"@"+version); err != nil {
+		return rollback(err)
+	}
+	if _, err := command(root, false, "go", "mod", "tidy"); err != nil {
+		return rollback(err)
+	}
+	modJSON, err := command(root, true, "go", "mod", "edit", "-json")
+	if err != nil {
+		return rollback(err)
+	}
+	pinned, err := sourcePin(modJSON)
+	if err != nil || pinned != version {
+		if err == nil {
+			err = errors.New("go mod tidy changed the synchronized source pin")
+		}
+		return rollback(err)
+	}
 	outputPath := os.Getenv("GITHUB_OUTPUT")
 	outputSnapshot, err := snapshotWorkflowOutput(outputPath)
 	if err != nil {
-		return err
+		return rollback(err)
 	}
 	if outputPath != "" {
 		file, err := os.OpenFile(outputPath, os.O_APPEND|os.O_WRONLY, 0600)
 		if err != nil {
-			return errors.Join(err, outputSnapshot.restore())
+			return rollback(errors.Join(err, outputSnapshot.restore()))
 		}
-		_, writeErr := fmt.Fprintf(file, "source_commit=%s\noperand_image=%s\n", commit, selectedImage)
+		_, writeErr := fmt.Fprintf(file, "source_commit=%s\nsource_version=%s\noperand_image=%s\n", commit, version, selectedImage)
 		closeErr := file.Close()
 		if writeErr != nil || closeErr != nil {
-			return errors.Join(writeErr, closeErr, outputSnapshot.restore())
+			return rollback(errors.Join(writeErr, closeErr, outputSnapshot.restore()))
 		}
 	}
 	if err := installOutputs(root, configStage, installerStage, pinStage); err != nil {
-		return errors.Join(err, outputSnapshot.restore())
+		return rollback(errors.Join(err, outputSnapshot.restore()))
 	}
-	fmt.Printf("Synchronized MCPLO source %s from ref %s\n", commit, ref)
+	fmt.Printf("Synchronized MCPLO source %s (%s) from ref %s\n", commit, version, ref)
 	return nil
 }
 
@@ -165,6 +255,21 @@ func installerDiffers(actual, expected string) bool {
 }
 
 func verify(root string) error {
+	modJSON, err := command(root, true, "go", "mod", "edit", "-json")
+	if err != nil {
+		return err
+	}
+	pinned, err := sourcePin(modJSON)
+	if err != nil {
+		return err
+	}
+	version, commit, err := moduleVersion(pinned, root)
+	if err != nil {
+		return err
+	}
+	if version != pinned {
+		return fmt.Errorf("pinned version %s resolved as %s", pinned, version)
+	}
 	pin, err := readImagePin(filepath.Join(root, imagePin))
 	if err != nil {
 		return err
@@ -174,6 +279,9 @@ func verify(root string) error {
 		return err
 	}
 	defer os.RemoveAll(stage)
+	if commit != pin.SourceCommit {
+		return fmt.Errorf("Go source %s@%s resolves to %s, operand image record pins %s", fork, pinned, commit, pin.SourceCommit)
+	}
 	configStage, installerStage, err := generate(pin.SourceCommit, pin.Image, stage)
 	if err != nil {
 		return err
@@ -193,6 +301,6 @@ func verify(root string) error {
 		}
 		return fmt.Errorf("run make update-operand-manifests MCPLO_REF=%s", pin.SourceCommit)
 	}
-	fmt.Printf("Operand manifests match MCPLO source %s, image %s\n", pin.SourceCommit, pin.Image)
+	fmt.Printf("Operand manifests match MCPLO source %s (%s), image %s\n", pin.SourceCommit, pinned, pin.Image)
 	return nil
 }

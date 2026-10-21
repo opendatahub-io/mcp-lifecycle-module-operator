@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -256,6 +257,46 @@ func stagedPin(t *testing.T, dir string) string {
 	return filename
 }
 
+func fakeModuleUpdaterCommand(t *testing.T, root, failAt string, versions ...string) {
+	t.Helper()
+	original := command
+	t.Cleanup(func() { command = original })
+	version := "v0.0.0-20261015110633-5892d3dab0c4"
+	if len(versions) > 0 {
+		version = versions[0]
+	}
+	command = func(dir string, capture bool, name string, args ...string) ([]byte, error) {
+		if name != "go" || len(args) < 2 || args[0] != "mod" {
+			return nil, fmt.Errorf("unexpected command %s %v", name, args)
+		}
+		switch args[1] {
+		case "edit":
+			if len(args) == 3 && args[2] == "-json" {
+				return []byte(fmt.Sprintf(`{"Require":[{"Path":%q,"Version":%q}],"Replace":[{"Old":{"Path":%q},"New":{"Path":%q,"Version":%q}}]}`, canonical, placeholderVersion, canonical, fork, version)), nil
+			}
+			if len(args) != 4 || args[2] != "-require="+canonical+"@"+placeholderVersion || args[3] != "-replace="+canonical+"="+fork+"@"+version {
+				return nil, fmt.Errorf("unexpected go mod edit arguments: %v", args)
+			}
+			if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte(fmt.Sprintf("module test\n\nrequire %s %s\n\nreplace %s => %s %s\n", canonical, placeholderVersion, canonical, fork, version)), 0644); err != nil {
+				return nil, err
+			}
+			if failAt == "edit" {
+				return nil, fmt.Errorf("injected go mod edit failure")
+			}
+		case "tidy":
+			if err := os.WriteFile(filepath.Join(root, "go.sum"), []byte("updated sums\n"), 0644); err != nil {
+				return nil, err
+			}
+			if failAt == "tidy" {
+				return nil, fmt.Errorf("injected go mod tidy failure")
+			}
+		default:
+			return nil, fmt.Errorf("unexpected go mod command: %v", args)
+		}
+		return nil, nil
+	}
+}
+
 func git(t *testing.T, dir string, args ...string) {
 	t.Helper()
 	cmd := exec.Command("git", args...)
@@ -427,6 +468,7 @@ func TestWorkflowOutputSnapshotRestoresOriginalOnLaterFailure(t *testing.T) {
 }
 
 func TestUpdateMetadataFailureLeavesModulesUntouchedBeforeOutputInstall(t *testing.T) {
+	const version = "v0.0.0-20261015110633-5892d3dab0c4"
 	root := t.TempDir()
 	modPath := filepath.Join(root, "go.mod")
 	oldMod := []byte("old module bytes\n")
@@ -460,11 +502,19 @@ func TestUpdateMetadataFailureLeavesModulesUntouchedBeforeOutputInstall(t *testi
 	}
 	output := filepath.Join(root, "missing-directory", "github-output")
 	t.Setenv("GITHUB_OUTPUT", output)
-	if err := applyUpdate(root, strings.Repeat("a", 40), "test-ref", testImage, stagedConfig, stagedInstaller, stagedPin); err == nil {
-		t.Fatal("expected workflow-output open failure")
+	fakeModuleUpdaterCommand(t, root, "")
+	failure := applyUpdate(root, version, strings.Repeat("a", 40), "test-ref", testImage, stagedConfig, stagedInstaller, stagedPin)
+	if failure == nil || !errors.Is(failure, os.ErrNotExist) || !strings.Contains(failure.Error(), output) {
+		t.Fatalf("applyUpdate() error = %v, want missing workflow-output path %s", failure, output)
 	}
 	if got, err := os.ReadFile(modPath); err != nil || string(got) != string(oldMod) {
 		t.Fatalf("go.mod changed = %q, %v", got, err)
+	}
+	if info, err := os.Stat(modPath); err != nil || info.Mode().Perm() != 0640 {
+		t.Fatalf("go.mod mode = %v, %v, want 0640", info, err)
+	}
+	if _, err := os.Stat(output); !os.IsNotExist(err) {
+		t.Fatalf("workflow output exists after open failure: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(root, "go.sum")); !os.IsNotExist(err) {
 		t.Fatalf("originally absent go.sum remains: %v", err)
@@ -482,13 +532,15 @@ func TestApplyUpdateLeavesModuleFilesUntouched(t *testing.T) {
 		for _, failInstall := range []bool{false, true} {
 			t.Run(fmt.Sprintf("modules=%t/failure=%t", modulesPresent, failInstall), func(t *testing.T) {
 				root, stage := t.TempDir(), t.TempDir()
-				for _, name := range []string{"go.mod", "go.sum"} {
-					if modulesPresent {
-						if err := os.WriteFile(filepath.Join(root, name), []byte("untouched "+name), 0640); err != nil {
-							t.Fatal(err)
-						}
+				if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("original module\n"), 0640); err != nil {
+					t.Fatal(err)
+				}
+				if modulesPresent {
+					if err := os.WriteFile(filepath.Join(root, "go.sum"), []byte("original sums\n"), 0640); err != nil {
+						t.Fatal(err)
 					}
 				}
+				fakeModuleUpdaterCommand(t, root, map[bool]string{true: "install"}[failInstall])
 				stagedConfig, stagedInstaller := filepath.Join(stage, "config"), filepath.Join(stage, "installer.yaml")
 				if err := os.Mkdir(stagedConfig, 0755); err != nil {
 					t.Fatal(err)
@@ -510,23 +562,36 @@ func TestApplyUpdateLeavesModuleFilesUntouched(t *testing.T) {
 					}
 					return realRename(old, new)
 				}
-				if err := applyUpdate(root, imageTestSource, "test-ref", testImage, stagedConfig, stagedInstaller, pin); (err != nil) != failInstall {
+				if err := applyUpdate(root, "v0.0.0-20261015110633-5892d3dab0c4", imageTestSource, "test-ref", testImage, stagedConfig, stagedInstaller, pin); (err != nil) != failInstall {
 					t.Fatalf("applyUpdate() = %v, want failure %t", err, failInstall)
 				}
-				for _, name := range []string{"go.mod", "go.sum"} {
-					data, err := os.ReadFile(filepath.Join(root, name))
-					if modulesPresent {
-						info, statErr := os.Stat(filepath.Join(root, name))
-						if err != nil || string(data) != "untouched "+name || statErr != nil || info.Mode().Perm() != 0640 {
-							t.Fatalf("%s changed: %q, %v, %v", name, data, err, statErr)
-						}
-					} else if !os.IsNotExist(err) {
-						t.Fatalf("%s was created: %q, %v", name, data, err)
+				module, err := os.ReadFile(filepath.Join(root, "go.mod"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if failInstall {
+					info, statErr := os.Stat(filepath.Join(root, "go.mod"))
+					if string(module) != "original module\n" || statErr != nil || info.Mode().Perm() != 0640 {
+						t.Fatalf("go.mod rollback = %q, %v, %v", module, err, statErr)
 					}
+				} else if !strings.Contains(string(module), "require "+canonical+" "+placeholderVersion) || !strings.Contains(string(module), "replace "+canonical+" => "+fork+" v0.0.0-20261015110633-5892d3dab0c4") {
+					t.Fatalf("go.mod does not preserve the placeholder/real-fork split: %q", module)
+				}
+				sums, sumErr := os.ReadFile(filepath.Join(root, "go.sum"))
+				if failInstall && modulesPresent {
+					if sumErr != nil || string(sums) != "original sums\n" {
+						t.Fatalf("go.sum rollback = %q, %v", sums, sumErr)
+					}
+				} else if failInstall {
+					if !os.IsNotExist(sumErr) {
+						t.Fatalf("new go.sum remains after rollback: %q, %v", sums, sumErr)
+					}
+				} else if sumErr != nil || !strings.Contains(string(sums), "updated sums") {
+					t.Fatalf("go.sum update = %q, %v", sums, sumErr)
 				}
 				wantOutput := "previous=entry\n"
 				if !failInstall {
-					wantOutput += "source_commit=" + imageTestSource + "\noperand_image=" + testImage + "\n"
+					wantOutput += "source_commit=" + imageTestSource + "\nsource_version=v0.0.0-20261015110633-5892d3dab0c4\noperand_image=" + testImage + "\n"
 				}
 				if got, err := os.ReadFile(output); err != nil || string(got) != wantOutput {
 					t.Fatalf("workflow output = %q, %v, want %q", got, err, wantOutput)
@@ -545,6 +610,10 @@ func (transport forbiddenRegistryTransport) RoundTrip(request *http.Request) (*h
 
 func TestVerifyUsesSavedLockWithoutModuleOrRegistryResolution(t *testing.T) {
 	root, bin := t.TempDir(), t.TempDir()
+	version := "v0.0.0-20261015110633-5892d3dab0c4"
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.test/operator\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
 	if err := writeImagePin(filepath.Join(root, imagePin), imagePinRecord{SourceCommit: imageTestSource, Image: testImage}); err != nil {
 		t.Fatal(err)
 	}
@@ -569,8 +638,18 @@ esac
 	t.Cleanup(func() { command, http.DefaultTransport = realCommand, realTransport })
 	http.DefaultTransport = forbiddenRegistryTransport{t}
 	checkoutMismatch := false
+	moduleOrigin := imageTestSource
 	fetches := 0
 	command = func(dir string, capture bool, name string, args ...string) ([]byte, error) {
+		if name == "go" {
+			if strings.Join(args, " ") == "mod edit -json" {
+				return []byte(fmt.Sprintf(`{"Require":[{"Path":%q,"Version":%q}],"Replace":[{"Old":{"Path":%q},"New":{"Path":%q,"Version":%q}}]}`, canonical, placeholderVersion, canonical, fork, version)), nil
+			}
+			if strings.Join(args, " ") == "list -m -json "+fork+"@"+version {
+				return []byte(fmt.Sprintf(`{"Path":%q,"Version":%q,"Origin":{"Hash":%q}}`, fork, version, moduleOrigin)), nil
+			}
+			t.Fatalf("unexpected Go module command: %v", args)
+		}
 		if name != "git" {
 			t.Fatalf("unexpected source/module command: %s %v", name, args)
 		}
@@ -621,6 +700,11 @@ esac
 	if err := verify(root); err != nil {
 		t.Fatal(err)
 	}
+	moduleOrigin = strings.Repeat("f", 40)
+	if err := verify(root); err == nil || !strings.Contains(err.Error(), "operand image record pins") {
+		t.Fatalf("verify() accepted source/image commit mismatch: %v", err)
+	}
+	moduleOrigin = imageTestSource
 	checkoutMismatch = true
 	if err := verify(root); err == nil || !strings.Contains(err.Error(), "checkout mismatch") {
 		t.Fatalf("verify() accepted mismatched checkout: %v", err)
@@ -648,10 +732,8 @@ esac
 	if err := verify(root); err == nil || fetches != before {
 		t.Fatalf("verify() did not reject invalid lock before generation: fetches=%d, error=%v", fetches, err)
 	}
-	for _, name := range []string{"go.mod", "go.sum"} {
-		if _, err := os.Stat(filepath.Join(root, name)); !os.IsNotExist(err) {
-			t.Fatalf("verification created root %s: %v", name, err)
-		}
+	if data, err := os.ReadFile(filepath.Join(root, "go.mod")); err != nil || string(data) != "module example.test/operator\n" {
+		t.Fatalf("verification modified go.mod: %q, %v", data, err)
 	}
 }
 

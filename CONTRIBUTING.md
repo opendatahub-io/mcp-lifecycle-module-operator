@@ -4,10 +4,10 @@
 
 - Go 1.26+
 - [Kind](https://kind.sigs.k8s.io/) (for local E2E testing)
-- Docker or Podman
+- Podman or Docker
 - `kubectl`
 
-Build tools (`kustomize`, `controller-gen`) are downloaded automatically into `./bin/` by the Makefile.
+Build tools (`kustomize`, `controller-gen`) are downloaded automatically into `./bin/` by the Makefile. Container targets prefer Podman when installed, otherwise Docker. Override with `CONTAINER_TOOL=docker` or `CONTAINER_TOOL=podman`.
 
 ## Make Targets
 
@@ -90,7 +90,7 @@ make update-operand-manifests
 make update-operand-manifests MCPLO_REF=v0.2.0
 ```
 
-The Go updater in `tools/source-update` regenerates the copied configuration and embedded installer from one immutable source commit, without adding MCPLO to this module's Go dependencies. During `update`, it resolves the public Quay tag named for that full source commit, validates the OCI index digest and every runnable platform image's source/repository labels, then records the selected index reference and source SHA in `operand-image.json`. Each runnable platform must supply at least one of `git.commit`, `org.opencontainers.image.revision`, or `vcs-ref`; every supplied recognized source label must equal the full source commit (empty or conflicting values are rejected). The `git.url` repository label remains required. A missing published build or mismatched source fails before files are installed. Configuration, installer and image record are installed together, with rollback on failure.
+The Go updater in `tools/source-update` resolves a branch, tag, or full commit SHA once, then uses Go module metadata to derive the ODH fork's real Go version for that exact source commit. It keeps the canonical MCPLO requirement at `v0.0.0` and pins the ODH fork replacement to that real version. The module origin SHA must match the selected full source commit. The update synchronizes the fork replacement, `go.sum`, copied configuration, embedded installer, and `operand-image.json`. During `update`, it resolves the public Quay tag named for that full source commit, validates the OCI index digest and every runnable platform image's source/repository labels, then records the selected index reference and source SHA. Each runnable platform must supply at least one of `git.commit`, `org.opencontainers.image.revision`, or `vcs-ref`; every supplied recognized source label must equal the full source commit (empty or conflicting values are rejected). The `git.url` repository label remains required. A missing published build or mismatched source fails before outputs are installed. Module files, configuration, installer, image record and workflow outputs are restored on update failure.
 
 The tag is mutable, so `make verify-operand-manifests` uses the committed source/image record and does not look up the tag again. It regenerates from that exact source and image and byte-compares the config and installer output. It still fetches pinned source and Go tooling; it is not an offline or disconnected-cluster test. Update-time checks validate published labels and registry content hashes, not cryptographic signatures or provenance attestations. On release branches, use the matching MCPLO release branch rather than `main`.
 
@@ -138,7 +138,11 @@ Unlabeled checks leave the singleton unchanged. Use one Ginkgo process. The suit
 
 Install optional Gateway test prerequisites with `make deploy-gateway-crds`. Pass Ginkgo options through `E2E_TEST_ARGS`, such as `-ginkgo.v` or `-ginkgo.junit-report=/tmp/mcplmo-junit.xml`.
 
-The suite timeout defaults to 15 minutes. Override it with `E2E_TEST_TIMEOUT`, for example `make e2e-test E2E_TEST_TIMEOUT=30m`. Individual polling waits have a fixed 5-minute timeout.
+`make e2e-test` sets the Go test timeout to 15 minutes by default. Override it with `E2E_TEST_TIMEOUT`, for example `make e2e-test E2E_TEST_TIMEOUT=30m`. The container image uses the shared runner, which invokes a precompiled test binary directly without adding a suite timeout; that binary's timeout defaults to disabled unless `-test.timeout` is passed as an image argument. Individual polling waits have a fixed 5-minute timeout.
+
+### Containerized E2E suite
+
+See [MCPLMO E2E image](test/e2e/README.md) for external-cluster invocation, release tags, permissions, and the JUnit/log/artifact contract.
 
 ## CI
 
