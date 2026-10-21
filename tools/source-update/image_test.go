@@ -157,6 +157,33 @@ func pathTail(value string) string {
 	return value[strings.LastIndex(value, "/")+1:]
 }
 
+func TestResolveOperandImageNormalizesAarch64AndRejectsMismatch(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		descriptorArch string
+		wantErr        bool
+	}{
+		{name: "arm64 index matches aarch64 config", descriptorArch: "arm64"},
+		{name: "genuine mismatch rejected", descriptorArch: "ppc64le", wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fixture := makeRegistryFixture(t, imageTestSource, "aarch64")
+			setFixturePlatform(t, &fixture, 0, map[string]string{"os": "linux", "architecture": tc.descriptorArch})
+			server := httptest.NewServer(fixture.handler(t, func() registryFixture { return fixture }, http.StatusOK, ""))
+			defer server.Close()
+
+			got, err := resolveOperandImageAt(server.URL, imageTestSource, server.Client())
+			if tc.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "does not match index") {
+					t.Fatalf("resolveOperandImageAt() = %q, %v, want platform mismatch", got, err)
+				}
+			} else if err != nil || got != imageRepository+"@"+fixture.rootDigest {
+				t.Fatalf("resolveOperandImageAt() = %q, %v", got, err)
+			}
+		})
+	}
+}
+
 func TestResolveOperandImageValidatesAllRunnablePlatforms(t *testing.T) {
 	fixture := makeRegistryFixture(t, imageTestSource, "amd64", "arm64")
 	fixtureHandler := fixture.handler(t, func() registryFixture { return fixture }, http.StatusOK, "")

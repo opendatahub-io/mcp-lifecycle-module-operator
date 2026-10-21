@@ -268,6 +268,9 @@ func normalizeArchitecture(arch string) string {
 	if arch == "x86_64" {
 		return "amd64"
 	}
+	if arch == "aarch64" {
+		return "arm64"
+	}
 	return arch
 }
 
