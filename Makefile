@@ -2,6 +2,17 @@ IMAGE_REGISTRY ?= quay.io/opendatahub
 IMAGE_NAME ?= odh-mcp-lifecycle-module-operator
 IMAGE_TAG ?= odh-stable
 IMG ?= $(IMAGE_REGISTRY)/$(IMAGE_NAME):$(IMAGE_TAG)
+
+ifeq ($(origin CONTAINER_TOOL),undefined)
+CONTAINER_TOOL := $(shell command -v podman >/dev/null 2>&1 && echo podman || echo docker)
+endif
+ifneq ("$(value CONTAINER_TOOL)","docker")
+ifneq ("$(value CONTAINER_TOOL)","podman")
+$(error CONTAINER_TOOL must be exactly docker or podman)
+endif
+endif
+export KIND_EXPERIMENTAL_PROVIDER := $(CONTAINER_TOOL)
+
 PLATFORM ?= linux/amd64
 E2E_TEST_ARGS ?=
 E2E_TEST_TIMEOUT ?= 15m
@@ -16,9 +27,6 @@ MCPLO_OPERAND_IMAGE ?=
 # Match the source release branch; development branches default to main.
 MCPLO_REF ?= $(shell git branch --show-current 2>/dev/null | grep -E '^main$$|^rhoai-' || printf main)
 export MCPLO_REF
-
-CONTAINER_TOOL ?= $(shell command -v podman >/dev/null 2>&1 && echo podman || echo docker)
-export KIND_EXPERIMENTAL_PROVIDER := $(CONTAINER_TOOL)
 
 ifeq (,$(shell go env GOBIN))
 GOBIN=$(shell go env GOPATH)/bin
@@ -85,7 +93,7 @@ unit-test: ## Run unit tests (no codegen prerequisites).
 
 .PHONY: kind-create
 kind-create: ## Create a Kind cluster with a local registry.
-	hack/create-kind-cluster.sh --container-tool $(CONTAINER_TOOL)
+	hack/create-kind-cluster.sh --container-tool "$(CONTAINER_TOOL)"
 
 .PHONY: kind-delete
 kind-delete: ## Delete the Kind cluster.
@@ -118,11 +126,11 @@ run: manifests generate fmt vet ## Run a controller from your host.
 
 .PHONY: docker-build
 docker-build: ## Build docker image with the manager.
-	$(CONTAINER_TOOL) build --platform $(PLATFORM) --build-arg CGO_ENABLED=$(CGO_ENABLED) -f Dockerfile.konflux -t ${IMG} .
+	"$(CONTAINER_TOOL)" build --platform $(PLATFORM) --build-arg CGO_ENABLED=$(CGO_ENABLED) -f Dockerfile.konflux -t "$(IMG)" .
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
-	$(CONTAINER_TOOL) push $(if $(and $(filter podman,$(CONTAINER_TOOL)),$(filter localhost:%,$(IMG))),--tls-verify=false) ${IMG}
+	"$(CONTAINER_TOOL)" push $(if $(and $(filter podman,$(CONTAINER_TOOL)),$(filter localhost:%,$(IMG))),--tls-verify=false) "$(IMG)"
 
 ##@ Deployment
 
@@ -165,8 +173,8 @@ RPM_LOCKFILE_IMAGE ?= rpm-lockfile-prototype:local
 
 .PHONY: rpm-lockfile
 rpm-lockfile: ## Generate rpms.lock.yaml from rpms.in.yaml.
-	$(CONTAINER_TOOL) build -f Containerfile -t $(RPM_LOCKFILE_IMAGE) https://github.com/konflux-ci/rpm-lockfile-prototype.git
-	$(CONTAINER_TOOL) run --rm -v $(shell pwd):/work:Z $(RPM_LOCKFILE_IMAGE) --outfile=rpms.lock.yaml rpms.in.yaml
+	"$(CONTAINER_TOOL)" build -f Containerfile -t "$(RPM_LOCKFILE_IMAGE)" https://github.com/konflux-ci/rpm-lockfile-prototype.git
+	"$(CONTAINER_TOOL)" run --rm -v $(shell pwd):/work:Z "$(RPM_LOCKFILE_IMAGE)" --outfile=rpms.lock.yaml rpms.in.yaml
 
 ##@ Build Dependencies
 
