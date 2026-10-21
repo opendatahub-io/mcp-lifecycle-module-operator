@@ -52,39 +52,60 @@ func TestApplyUpdateUsesCanonicalPlaceholderAndRealForkVersion(t *testing.T) {
 	}
 }
 
-func TestUpdateRestoresModuleFilesOnResolutionAndGenerationFailures(t *testing.T) {
+func TestUpdateResolutionAndGenerationFailuresLeaveRootUntouched(t *testing.T) {
 	for _, tc := range []struct {
-		name      string
-		queryErr  bool
-		badOrigin bool
-		imageErr  bool
-		generate  bool
+		name                          string
+		queryErr, badOrigin, imageErr bool
+		generate                      bool
+		wantError                     string
+		wantImage, wantGeneration     bool
 	}{
-		{name: "module query", queryErr: true},
-		{name: "origin mismatch", badOrigin: true},
-		{name: "image lookup", imageErr: true},
-		{name: "generation", generate: true},
+		{name: "module query", queryErr: true, wantError: "injected module query failure"},
+		{name: "origin mismatch", badOrigin: true, wantError: "Go resolved " + fork + "@" + imageTestSource + " to source " + strings.Repeat("f", 40)},
+		{name: "image lookup", imageErr: true, wantError: "injected image lookup failure", wantImage: true},
+		{name: "generation", generate: true, wantError: "injected generation failure", wantImage: true, wantGeneration: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
-			originalMod, originalSum := []byte("module test\n"), []byte("original sums\n")
-			for name, data := range map[string][]byte{"go.mod": originalMod, "go.sum": originalSum} {
-				if err := os.WriteFile(filepath.Join(root, name), data, 0640); err != nil {
-					t.Fatal(err)
-				}
+			originalMod := []byte("module test\n")
+			modPath := filepath.Join(root, "go.mod")
+			if err := os.WriteFile(modPath, originalMod, 0640); err != nil {
+				t.Fatal(err)
+			}
+			modBefore, err := os.Stat(modPath)
+			if err != nil {
+				t.Fatal(err)
 			}
 			oldCommand, oldResolve, oldGenerate := command, resolveImage, generateOutputs
 			t.Cleanup(func() { command, resolveImage, generateOutputs = oldCommand, oldResolve, oldGenerate })
-			command = func(_ string, _ bool, name string, args ...string) ([]byte, error) {
-				if name == "git" {
-					if args[0] == "-C" && strings.Contains(strings.Join(args, " "), "rev-parse FETCH_HEAD^{commit}") {
+			queryDir, checkout := "", ""
+			command = func(dir string, _ bool, name string, args ...string) ([]byte, error) {
+				switch name {
+				case "git":
+					switch {
+					case len(args) == 2 && args[0] == "init":
+						checkout = args[1]
+					case len(args) == 6 && args[0] == "-C" && args[1] == checkout && args[2] == "remote" && args[3] == "add" && args[4] == "origin" && args[5] == repo:
+					case len(args) == 6 && args[0] == "-C" && args[1] == checkout && args[2] == "fetch" && args[3] == "--depth=1" && args[4] == "origin" && args[5] == imageTestSource:
+					case len(args) == 4 && args[0] == "-C" && args[1] == checkout && args[2] == "rev-parse" && args[3] == "FETCH_HEAD^{commit}":
 						return []byte(imageTestSource), nil
+					default:
+						t.Fatalf("unexpected git command: %v", args)
 					}
 					return nil, nil
-				}
-				if name == "go" && strings.Join(args, " ") == "list -m -json "+fork+"@"+imageTestSource {
-					if err := os.WriteFile(filepath.Join(root, "go.sum"), []byte("query side effect\n"), 0644); err != nil {
-						return nil, err
+				case "go":
+					if strings.Join(args, " ") != "list -m -json "+fork+"@"+imageTestSource {
+						t.Fatalf("unexpected Go command in %q: %v", dir, args)
+					}
+					if dir == "" || dir == root {
+						t.Fatalf("module query dir = %q, want isolated stage outside root %q", dir, root)
+					}
+					queryDir = dir
+					if !strings.Contains("\n"+strings.Join(localToolchainEnv(), "\n")+"\n", "\nGOWORK=off\n") {
+						t.Fatalf("module query environment does not set GOWORK=off")
+					}
+					if err := os.WriteFile(filepath.Join(dir, "go.sum"), []byte("query side effect\n"), 0644); err != nil {
+						t.Fatalf("write isolated query side effect: %v", err)
 					}
 					if tc.queryErr {
 						return nil, errors.New("injected module query failure")
@@ -94,29 +115,43 @@ func TestUpdateRestoresModuleFilesOnResolutionAndGenerationFailures(t *testing.T
 						origin = strings.Repeat("f", 40)
 					}
 					return []byte(fmt.Sprintf(`{"Path":%q,"Version":"v0.0.0-20261015110633-5892d3dab0c4","Origin":{"Hash":%q}}`, fork, origin)), nil
+				default:
+					t.Fatalf("unexpected command %s in %q: %v", name, dir, args)
+					return nil, nil
 				}
-				return nil, fmt.Errorf("unexpected command %s %v", name, args)
 			}
+			imageCalled, generationCalled := false, false
 			resolveImage = func(string) (string, error) {
+				imageCalled = true
 				if tc.imageErr {
 					return "", errors.New("injected image lookup failure")
 				}
 				return testImage, nil
 			}
 			generateOutputs = func(_, _, _ string) (string, string, error) {
+				generationCalled = true
 				if tc.generate {
 					return "", "", errors.New("injected generation failure")
 				}
 				return "", "", nil
 			}
-			if err := update(root, imageTestSource); err == nil {
-				t.Fatal("update() unexpectedly succeeded")
+			if err := update(root, imageTestSource); err == nil || !strings.Contains(err.Error(), tc.wantError) {
+				t.Fatalf("update() error = %v, want %q", err, tc.wantError)
 			}
-			for name, want := range map[string][]byte{"go.mod": originalMod, "go.sum": originalSum} {
-				got, err := os.ReadFile(filepath.Join(root, name))
-				if err != nil || string(got) != string(want) {
-					t.Errorf("%s after failed update = %q, %v; want %q", name, got, err, want)
-				}
+			if queryDir == "" || queryDir == root {
+				t.Fatalf("module query dir = %q, want isolated stage", queryDir)
+			}
+			if imageCalled != tc.wantImage || generationCalled != tc.wantGeneration {
+				t.Fatalf("downstream calls = image:%t generation:%t, want image:%t generation:%t", imageCalled, generationCalled, tc.wantImage, tc.wantGeneration)
+			}
+			if got, err := os.ReadFile(modPath); err != nil || string(got) != string(originalMod) {
+				t.Errorf("go.mod after failed update = %q, %v; want original bytes", got, err)
+			}
+			if info, err := os.Stat(modPath); err != nil || info.Mode().Perm() != 0640 || !info.ModTime().Equal(modBefore.ModTime()) {
+				t.Errorf("go.mod after failed update = %v, %v; want original mode and mtime", info, err)
+			}
+			if got, err := os.ReadFile(filepath.Join(root, "go.sum")); !os.IsNotExist(err) {
+				t.Errorf("go.sum after failed update = %q, %v; want absent", got, err)
 			}
 		})
 	}
@@ -245,6 +280,9 @@ func TestApplyUpdateRejectsPostTidyModuleDriftAndRollsBack(t *testing.T) {
 
 func TestVerifyRejectsReturnedForkVersionMismatchBeforeGeneration(t *testing.T) {
 	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module test\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
 	pinned, resolved := "v1.2.3", "v1.2.4"
 	mod, err := json.Marshal(sourceMod(placeholderVersion, pinned))
 	if err != nil {
@@ -256,18 +294,24 @@ func TestVerifyRejectsReturnedForkVersionMismatchBeforeGeneration(t *testing.T) 
 	oldCommand := command
 	t.Cleanup(func() { command = oldCommand })
 	queries := 0
-	command = func(_ string, _ bool, name string, args ...string) ([]byte, error) {
+	command = func(dir string, _ bool, name string, args ...string) ([]byte, error) {
 		if name != "go" {
-			t.Fatalf("generation started before version mismatch was rejected: %s %v", name, args)
+			t.Fatalf("unexpected command %s %s %v; expected root metadata query", name, dir, args)
 		}
 		switch strings.Join(args, " ") {
 		case "mod edit -json":
+			if dir != root {
+				t.Fatalf("go mod edit -json dir = %q, want project root %q", dir, root)
+			}
 			return mod, nil
 		case "list -m -json " + fork + "@" + pinned:
 			queries++
+			if dir == root {
+				t.Fatalf("module query dir = %q, want isolated stage", dir)
+			}
 			return []byte(fmt.Sprintf(`{"Path":%q,"Version":%q,"Origin":{"Hash":%q}}`, fork, resolved, imageTestSource)), nil
 		default:
-			t.Fatalf("unexpected Go command: %v", args)
+			t.Fatalf("unexpected Go command in %q: %v; expected root metadata query or isolated pinned query", dir, args)
 			return nil, os.ErrInvalid
 		}
 	}
@@ -276,6 +320,96 @@ func TestVerifyRejectsReturnedForkVersionMismatchBeforeGeneration(t *testing.T) 
 	}
 	if queries != 1 {
 		t.Fatalf("fork version queries = %d, want 1", queries)
+	}
+}
+
+func TestVerifyQueryFailureLeavesRootModuleFilesUntouched(t *testing.T) {
+	const version = "v0.0.0-20261020144941-3d03622e7b27"
+	for _, sumExists := range []bool{false, true} {
+		t.Run(fmt.Sprintf("go.sum exists=%t", sumExists), func(t *testing.T) {
+			root := t.TempDir()
+			modPath, sumPath := filepath.Join(root, "go.mod"), filepath.Join(root, "go.sum")
+			originalMod, originalSum := []byte("original module bytes\n"), []byte("original sums\n")
+			if err := os.WriteFile(modPath, originalMod, 0640); err != nil {
+				t.Fatal(err)
+			}
+			if sumExists {
+				if err := os.WriteFile(sumPath, originalSum, 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			modJSON, err := json.Marshal(sourceMod(placeholderVersion, version))
+			if err != nil {
+				t.Fatal(err)
+			}
+			modBefore, err := os.Stat(modPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var sumBefore os.FileInfo
+			if sumExists {
+				sumBefore, err = os.Stat(sumPath)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			oldCommand := command
+			t.Cleanup(func() { command = oldCommand })
+			queries, queryDir := 0, ""
+			command = func(dir string, _ bool, name string, args ...string) ([]byte, error) {
+				if name != "go" {
+					t.Fatalf("unexpected verify command %s %s %v; expected go query in isolated stage", name, dir, args)
+				}
+				switch strings.Join(args, " ") {
+				case "mod edit -json":
+					if dir != root {
+						t.Fatalf("go mod edit -json dir = %q, want root %q", dir, root)
+					}
+					return modJSON, nil
+				case "list -m -json " + fork + "@" + version:
+					queries++
+					if dir == root {
+						t.Fatalf("module query dir = %q, want isolated stage", dir)
+					}
+					queryDir = dir
+					if !strings.Contains("\n"+strings.Join(localToolchainEnv(), "\n")+"\n", "\nGOWORK=off\n") {
+						t.Fatalf("module query environment lacks GOWORK=off")
+					}
+					if err := os.WriteFile(filepath.Join(dir, "go.sum"), []byte("injected query side effect\n"), 0644); err != nil {
+						return nil, err
+					}
+					return nil, errors.New("injected verify module query failure")
+				default:
+					t.Fatalf("unexpected Go command %v; expected isolated list query", args)
+					return nil, os.ErrInvalid
+				}
+			}
+
+			err = verify(root)
+			if err == nil || !strings.Contains(err.Error(), "injected verify module query failure") {
+				t.Fatalf("verify() error = %v, want injected module query failure", err)
+			}
+			if queries != 1 || queryDir == "" || queryDir == root {
+				t.Fatalf("module query count/dir = %d/%q, want one query in isolated stage", queries, queryDir)
+			}
+			if got, err := os.ReadFile(modPath); err != nil || string(got) != string(originalMod) {
+				t.Fatalf("go.mod after verify = %q, %v; want original bytes", got, err)
+			}
+			if info, err := os.Stat(modPath); err != nil || info.Mode().Perm() != 0640 || !info.ModTime().Equal(modBefore.ModTime()) {
+				t.Fatalf("go.mod after verify = %v, %v; want original mode and mtime", info, err)
+			}
+			gotSum, err := os.ReadFile(sumPath)
+			if sumExists {
+				if err != nil || string(gotSum) != string(originalSum) {
+					t.Fatalf("go.sum after verify = %q, %v; want original bytes", gotSum, err)
+				}
+				if info, statErr := os.Stat(sumPath); statErr != nil || info.Mode().Perm() != 0600 || !info.ModTime().Equal(sumBefore.ModTime()) {
+					t.Fatalf("go.sum after verify = %v, %v; want original mode and mtime", info, statErr)
+				}
+			} else if !os.IsNotExist(err) {
+				t.Fatalf("go.sum created by verify remains: %q, %v", gotSum, err)
+			}
+		})
 	}
 }
 

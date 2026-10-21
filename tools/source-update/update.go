@@ -151,19 +151,10 @@ func (files moduleFilesSnapshot) restore() error {
 	return errors.Join(errs...)
 }
 
-func update(root, ref string) (result error) {
+func update(root, ref string) error {
 	if err := validateRef(ref); err != nil {
 		return err
 	}
-	moduleFiles, err := snapshotModuleFiles(root)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if result != nil {
-			result = errors.Join(result, moduleFiles.restore())
-		}
-	}()
 	stage, err := os.MkdirTemp("", "operand-update-")
 	if err != nil {
 		return err
@@ -174,7 +165,7 @@ func update(root, ref string) (result error) {
 	if err != nil {
 		return err
 	}
-	version, originCommit, err := moduleVersion(commit, root)
+	version, originCommit, err := moduleVersion(commit, stage)
 	if err != nil {
 		return err
 	}
@@ -263,7 +254,12 @@ func verify(root string) error {
 	if err != nil {
 		return err
 	}
-	version, commit, err := moduleVersion(pinned, root)
+	stage, err := os.MkdirTemp("", "operand-verify-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(stage)
+	version, commit, err := moduleVersion(pinned, stage)
 	if err != nil {
 		return err
 	}
@@ -274,11 +270,6 @@ func verify(root string) error {
 	if err != nil {
 		return err
 	}
-	stage, err := os.MkdirTemp("", "operand-verify-")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(stage)
 	if commit != pin.SourceCommit {
 		return fmt.Errorf("Go source %s@%s resolves to %s, operand image record pins %s", fork, pinned, commit, pin.SourceCommit)
 	}

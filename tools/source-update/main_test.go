@@ -192,6 +192,21 @@ esac
 	}
 }
 
+func TestCommandEnvironmentDisablesInheritedGoWork(t *testing.T) {
+	root := t.TempDir()
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "go"), []byte("#!/bin/sh\n[ \"$*\" = 'env GOWORK' ] || exit 97\nprintf '%s\\n' \"$GOWORK\"\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	t.Setenv("GOWORK", filepath.Join(root, "go.work"))
+
+	out, err := runCommand("", true, "go", "env", "GOWORK")
+	if err != nil || strings.TrimSpace(string(out)) != "off" {
+		t.Fatalf("command GOWORK = %q, %v; want off despite inherited workspace", out, err)
+	}
+}
+
 func TestGeneratorGoVersion(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.test/source\n\ngo 1.26.3\ntoolchain go1.27.9\n"), 0644); err != nil {

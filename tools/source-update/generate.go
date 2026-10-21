@@ -37,7 +37,7 @@ func runCommandEnv(dir string, capture bool, env []string, name string, args ...
 }
 
 func localToolchainEnv() []string {
-	return setEnv(os.Environ(), "GOTOOLCHAIN", "local")
+	return setEnv(setEnv(os.Environ(), "GOTOOLCHAIN", "local"), "GOWORK", "off")
 }
 
 func setEnv(env []string, key, value string) []string {
@@ -62,7 +62,7 @@ func generatorEnv() []string {
 		}
 		filtered = append(filtered, item)
 	}
-	return setEnv(filtered, "GOWORK", "off")
+	return filtered
 }
 
 func generatorCommand(dir string, capture bool, name string, args ...string) ([]byte, error) {
