@@ -174,7 +174,7 @@ RPM_LOCKFILE_IMAGE ?= rpm-lockfile-prototype:local
 .PHONY: rpm-lockfile
 rpm-lockfile: ## Generate rpms.lock.yaml from rpms.in.yaml.
 	"$(CONTAINER_TOOL)" build -f Containerfile -t "$(RPM_LOCKFILE_IMAGE)" https://github.com/konflux-ci/rpm-lockfile-prototype.git
-	"$(CONTAINER_TOOL)" run --rm -v $(shell pwd):/work:Z "$(RPM_LOCKFILE_IMAGE)" --outfile=rpms.lock.yaml rpms.in.yaml
+	"$(CONTAINER_TOOL)" run --rm -v "$(shell pwd):/work:Z" "$(RPM_LOCKFILE_IMAGE)" --outfile=rpms.lock.yaml rpms.in.yaml
 
 ##@ Build Dependencies
 
