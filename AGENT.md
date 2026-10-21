@@ -6,7 +6,7 @@ Act like a professional software developer and engineer. Adhere to architecture,
 
 ## Project Overview
 
-Kubernetes operator (controller-runtime) for managing the lifecycle of the [MCP Lifecycle Operator](https://github.com/opendatahub-io/mcp-lifecycle-operator) as a module within [Open Data Hub](https://opendatahub.io/) (ODH). Written in Go, uses Ginkgo/Gomega for tests.
+Kubernetes operator (controller-runtime) for managing the lifecycle of the [MCP Lifecycle Operator](https://github.com/opendatahub-io/mcp-lifecycle-operator) as a module within [Open Data Hub](https://opendatahub.io/) (ODH). Written in Go, uses Go tests with Gomega assertions.
 
 This is a **module operator** - it does not implement business logic. Its sole job is to deploy, reconcile, and garbage-collect the operand based on a `MCPLifecycleOperator` CR and a platform-managed ConfigMap. It follows **v2 of the [Onboarding Guide for ODH Operator Modules](https://docs.google.com/document/d/1FgN_U-6XH8M-Mu6XNeldUlTPsnw7UyPCWg5NVJJdYnw)**.
 

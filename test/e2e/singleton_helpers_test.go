@@ -19,6 +19,7 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"testing"
 
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
@@ -32,19 +33,21 @@ import (
 	platformcommon "github.com/opendatahub-io/odh-platform-utilities/api/common"
 )
 
-func createManagedSingleton(ctx context.Context) {
+func createManagedSingleton(t *testing.T, ctx context.Context) {
+	t.Helper()
 	cr := &v1alpha1.MCPLifecycleOperator{
 		ObjectMeta: metav1.ObjectMeta{Name: v1alpha1.MCPLifecycleOperatorInstanceName},
 		Spec: v1alpha1.MCPLifecycleOperatorSpec{
 			ManagementSpec: platformcommon.ManagementSpec{ManagementState: platformcommon.Managed},
 		},
 	}
-	Expect(k8sClient.Create(ctx, cr)).To(Succeed())
-	waitForOperandReady(ctx)
+	NewWithT(t).Expect(k8sClient.Create(ctx, cr)).To(Succeed())
+	waitForOperandReady(t, ctx)
 }
 
-func restoreManagedSingleton(ctx context.Context, uid types.UID) {
-	Expect(retry.RetryOnConflict(retry.DefaultRetry, func() error {
+func restoreManagedSingleton(t *testing.T, ctx context.Context, uid types.UID) {
+	t.Helper()
+	NewWithT(t).Expect(retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		cr := &v1alpha1.MCPLifecycleOperator{}
 		if err := k8sClient.Get(ctx, types.NamespacedName{Name: "default"}, cr); err != nil {
 			return err
@@ -59,7 +62,7 @@ func restoreManagedSingleton(ctx context.Context, uid types.UID) {
 		cr.Spec.ManagementState = platformcommon.Managed
 		return k8sClient.Patch(ctx, cr, client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{}))
 	})).To(Succeed(), "restoring the singleton to Managed")
-	waitForOperandReady(ctx)
+	waitForOperandReady(t, ctx)
 }
 
 func checkReadiness(ctx context.Context) error {

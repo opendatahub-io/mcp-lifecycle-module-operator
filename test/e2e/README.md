@@ -66,9 +66,9 @@ The example also saves stdout/stderr as `artifacts/container.log`. Jenkins/ITS m
 
 The wrapper propagates the shared runner's exit code. Nonzero can mean a failed test, timeout, invalid configuration, or inability to execute/write results. Preserve the status and inspect the logs and XML to distinguish these cases. Startup failures can occur before reports exist.
 
-Reporting uses the shared MCPLO runner's default `rhoai` XML rewrite for Jenkins/ReportPortal. The component remains `mcp-lifecycle-operator`, displayed as `Mcp Lifecycle Operator`; MCPLMO classnames use `Module`, with package/test name `e2e/TestE2E`. Do not register a separate MCPLMO top-level result or rewrite the XML again.
+Reporting uses the shared MCPLO runner's default `rhoai` XML rewrite for Jenkins/ReportPortal. The component remains `mcp-lifecycle-operator`, displayed as `Mcp Lifecycle Operator`; MCPLMO classnames use `Module`, with testcase names such as `e2e/TestE2ELifecycleOperandOutage`. Do not register a separate MCPLMO top-level result or rewrite the XML again.
 
-JUnit contains the Go-level `TestE2E` result, not a testcase for every Ginkgo spec. Individual spec skips, including optional gateway tests when CRDs are absent, are visible in the test output/JSONL. A root XML error counter is not necessarily a testcase `<error>`; retain the exact shared report. A missing-Go metadata warning in a binary-only runtime does not itself indicate test failure.
+JUnit contains one testcase per `TestE2E*` test and the namespace-discovery unit tests. Skips, including optional gateway tests when CRDs are absent, are reported as skipped testcases. If suite setup fails, the first test reports the error and every other `TestE2E*` test fails with a reference to it. A root XML error counter is not necessarily a testcase `<error>`; retain the exact shared report. A missing-Go metadata warning in a binary-only runtime does not itself indicate test failure.
 
 Supported shared-runner overrides include:
 
@@ -81,7 +81,7 @@ Supported shared-runner overrides include:
 | `E2E_REPO_ABBR` | `module`; keep repository results distinct |
 | `E2E_COMPONENT` | `mcp-lifecycle-operator`; retain the shared component identity |
 
-Keep `E2E_COUNT=1`; Ginkgo does not support Go test repetition through this setting. The inherited `E2E_GOTESTSUM_BIN` and `E2E_TEST2JSON_BIN` overrides are for alternate helper paths, not cluster configuration. Verbatim reporting or repository renaming requires separate consumer coordination.
+The inherited `E2E_GOTESTSUM_BIN` and `E2E_TEST2JSON_BIN` overrides are for alternate helper paths, not cluster configuration. Verbatim reporting or repository renaming requires separate consumer coordination.
 
 ## Validation and release alignment
 
