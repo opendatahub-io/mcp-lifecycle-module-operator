@@ -131,6 +131,8 @@ make e2e-test
 
 Other checks leave the singleton unchanged. Run one suite at a time against an installation. The suite leaves the installation running after tests.
 
+Live-cluster tests require the `e2e` build tag, which `make e2e-test` and the E2E image set automatically. Plain `go test ./...` runs the namespace-discovery unit tests without contacting a cluster.
+
 Install optional Gateway test prerequisites with `make deploy-gateway-crds`. Pass Go test binary flags through `E2E_TEST_ARGS`, such as `-test.run=TestE2EInstallation`.
 
 `make e2e-test` sets the Go test timeout to 15 minutes by default. Override it with `E2E_TEST_TIMEOUT`, for example `make e2e-test E2E_TEST_TIMEOUT=30m`. The container image uses the shared runner, which invokes a precompiled test binary directly without adding a suite timeout; that binary's timeout defaults to disabled unless `-test.timeout` is passed as an image argument. Individual polling waits have a fixed 5-minute timeout.

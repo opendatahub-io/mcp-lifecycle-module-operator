@@ -1,3 +1,5 @@
+//go:build e2e
+
 /*
 Copyright 2026.
 
@@ -34,6 +36,8 @@ import (
 
 	v1alpha1 "github.com/opendatahub-io/mcp-lifecycle-module-operator/api/v1alpha1"
 )
+
+// These tests mutate the shared cluster-wide MCPLifecycleOperator/default singleton; do not use t.Parallel().
 
 // TestE2ELifecycleSingletonDeletion verifies singleton deletion garbage-collects the operand and preserves the module installation.
 func TestE2ELifecycleSingletonDeletion(t *testing.T) {

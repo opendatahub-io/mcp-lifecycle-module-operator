@@ -1,3 +1,5 @@
+//go:build e2e
+
 /*
 Copyright 2026.
 
@@ -48,9 +50,7 @@ var restConfig *rest.Config
 var k8sClient client.Client
 
 const (
-	operandDeployment        = "mcp-lifecycle-operator-controller-manager"
-	operandCRD               = "mcpservers.mcp.x-k8s.io"
-	moduleOperatorDeployment = "mcp-lifecycle-module-operator-controller-manager"
+	operandCRD = "mcpservers.mcp.x-k8s.io"
 
 	timeout            = 5 * time.Minute
 	interval           = 5 * time.Second
