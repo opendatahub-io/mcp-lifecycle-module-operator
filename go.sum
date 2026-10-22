@@ -268,8 +268,8 @@ github.com/onsi/gomega v1.7.1/go.mod h1:XdKZgCCFLUoM/7CFJVPcG8C1xQ1AJ0vpAezJrB7J
 github.com/onsi/gomega v1.10.1/go.mod h1:iN09h71vgCQne3DLsj+A5owkum+a2tYe+TOCB1ybHNo=
 github.com/onsi/gomega v1.44.0 h1:eAiGl3Pw5jz5GQdDff0BcxYpAX1JxW8xD7mFUuwNfZQ=
 github.com/onsi/gomega v1.44.0/go.mod h1:e/C2HwaZ1DhvjzXXuFhcR7hY7Sh9pl7MmoWKEjzwcdA=
-github.com/opendatahub-io/mcp-lifecycle-operator v0.0.0-20261020144941-3d03622e7b27 h1:PLgBTEWqf6Nti7B8aZDjwStx1LApWgrGr92EpRLSmLM=
-github.com/opendatahub-io/mcp-lifecycle-operator v0.0.0-20261020144941-3d03622e7b27/go.mod h1:jnpny++v1HgqyWCcPwYajhcu9TD//z1CcQ2oc7fAlGE=
+github.com/opendatahub-io/mcp-lifecycle-operator v0.0.0-20261022054249-67f94432f18e h1:jXXEOPRsoxuGbcrEBjQU+BB2RKwYZZXURCaO75z+TkI=
+github.com/opendatahub-io/mcp-lifecycle-operator v0.0.0-20261022054249-67f94432f18e/go.mod h1:jnpny++v1HgqyWCcPwYajhcu9TD//z1CcQ2oc7fAlGE=
 github.com/opendatahub-io/odh-platform-utilities v0.5.0 h1:uEAe6VXyJAj56RcIGg2NYyfO4rm/e38PDRgis9gXWsc=
 github.com/opendatahub-io/odh-platform-utilities v0.5.0/go.mod h1:/yYTo/gyspyobqyy67oS557D8UN9VH1IuixJgfP3qYg=
 github.com/openshift/api v0.0.0-20261015135644-e07c1fd9d99c h1:Zglizi7B2Y7SsqP6U8sgNRM6TT51blAiRBfY0/HqSkM=
