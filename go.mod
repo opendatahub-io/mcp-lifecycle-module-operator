@@ -97,6 +97,6 @@ require (
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
 
-replace github.com/kubernetes-sigs/mcp-lifecycle-operator => github.com/opendatahub-io/mcp-lifecycle-operator v0.0.0-20261022054249-67f94432f18e
+replace github.com/kubernetes-sigs/mcp-lifecycle-operator => github.com/opendatahub-io/mcp-lifecycle-operator v0.0.0-20261022123649-fbc4ccf37cf5
 
 tool gotest.tools/gotestsum
