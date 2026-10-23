@@ -32,6 +32,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
+const (
+	moduleOperatorDeployment = "mcp-lifecycle-module-operator-controller-manager"
+	operandDeployment        = "mcp-lifecycle-operator-controller-manager"
+)
+
 func discoverSystemNamespace(ctx context.Context, c client.Reader, explicit string) (string, error) {
 	if explicit != "" {
 		return explicit, nil

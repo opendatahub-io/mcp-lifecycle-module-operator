@@ -127,16 +127,13 @@ The suite discovers the installation namespace from the module operator Deployme
 make e2e-test
 ```
 
-The suite automatically skips standalone tests when the singleton has an owner reference, as it does on RHOAI and ODH. An unowned singleton runs the full suite. No label filter is required.
+`TestE2ELifecycle*` tests change the singleton's management state, disrupt the operand Pod, or delete the singleton. They require a disposable installation and exclusive access to the component. Each test restores readiness during cleanup. `TestE2ELifecycleSingletonDeletion` checks operand garbage collection and is automatically skipped when the singleton has a parent owner, as it does on RHOAI and ODH.
 
-Labels:
+Other checks leave the singleton unchanged. Run one suite at a time against an installation. The suite leaves the installation running after tests.
 
-- `lifecycle`: changes the singleton's management state, disrupts the operand Pod, or deletes the singleton. Requires a disposable installation and exclusive access to the component. Each test restores readiness during cleanup.
-- `standalone`: deletes the singleton and checks operand garbage collection. Automatically skipped when the singleton has a parent owner.
+Live-cluster tests require the `e2e` build tag, which `make e2e-test` and the E2E image set automatically. Plain `go test ./...` runs the namespace-discovery unit tests without contacting a cluster.
 
-Unlabeled checks leave the singleton unchanged. Use one Ginkgo process. The suite leaves the installation running after tests.
-
-Install optional Gateway test prerequisites with `make deploy-gateway-crds`. Pass Ginkgo options through `E2E_TEST_ARGS`, such as `-ginkgo.v` or `-ginkgo.junit-report=/tmp/mcplmo-junit.xml`.
+Install optional Gateway test prerequisites with `make deploy-gateway-crds`. Pass Go test binary flags through `E2E_TEST_ARGS`, such as `-test.run=TestE2EInstallation`.
 
 `make e2e-test` sets the Go test timeout to 15 minutes by default. Override it with `E2E_TEST_TIMEOUT`, for example `make e2e-test E2E_TEST_TIMEOUT=30m`. The container image uses the shared runner, which invokes a precompiled test binary directly without adding a suite timeout; that binary's timeout defaults to disabled unless `-test.timeout` is passed as an image argument. Individual polling waits have a fixed 5-minute timeout.
 
