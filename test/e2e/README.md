@@ -54,8 +54,6 @@ The entrypoint is `/e2e/e2e-run`. It runs the whole compiled `./test/e2e` packag
 -test.timeout=30m
 ```
 
-For image wiring checks only, `-test.run=^$` selects no tests and does not contact the cluster. A successful empty selection is not a full validation run. Use the unfiltered suite for independent RHOAI validation.
-
 ## Results contract
 
 | Output | Default location |
