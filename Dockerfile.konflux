@@ -21,7 +21,7 @@ RUN make build GO_BUILD_ENV="GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH}"
 # -----------------------------------------------------------------------------
 # Crypto policy stage (throwaway – python3 stays out of the final image)
 # -----------------------------------------------------------------------------
-FROM registry.access.redhat.com/ubi9/ubi-minimal@sha256:c4c285d42941ebb2bd4da878479008e1e4536bb599aad1dbe568f89de9053661 AS crypto-policy
+FROM registry.access.redhat.com/ubi9/ubi-minimal@sha256:2d4c4551af6831dcd26bbf86108c4385de5183ec8fe6b5868f6f9640fe47f4ed AS crypto-policy
 
 RUN microdnf install -y crypto-policies-scripts && \
     update-crypto-policies --set DEFAULT:PQ --no-reload
@@ -29,7 +29,7 @@ RUN microdnf install -y crypto-policies-scripts && \
 # -----------------------------------------------------------------------------
 # Runtime stage
 # -----------------------------------------------------------------------------
-FROM registry.access.redhat.com/ubi9/ubi-minimal@sha256:c4c285d42941ebb2bd4da878479008e1e4536bb599aad1dbe568f89de9053661
+FROM registry.access.redhat.com/ubi9/ubi-minimal@sha256:2d4c4551af6831dcd26bbf86108c4385de5183ec8fe6b5868f6f9640fe47f4ed
 
 COPY --from=crypto-policy /etc/crypto-policies /etc/crypto-policies
 
