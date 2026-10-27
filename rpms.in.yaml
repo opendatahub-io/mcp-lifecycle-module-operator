@@ -14,3 +14,4 @@ packages:
 context:
   containerfile:
     file: Dockerfile.konflux
+    stageName: crypto-policy
