@@ -282,8 +282,8 @@ github.com/onsi/gomega v1.7.1/go.mod h1:XdKZgCCFLUoM/7CFJVPcG8C1xQ1AJ0vpAezJrB7J
 github.com/onsi/gomega v1.10.1/go.mod h1:iN09h71vgCQne3DLsj+A5owkum+a2tYe+TOCB1ybHNo=
 github.com/onsi/gomega v1.44.0 h1:eAiGl3Pw5jz5GQdDff0BcxYpAX1JxW8xD7mFUuwNfZQ=
 github.com/onsi/gomega v1.44.0/go.mod h1:e/C2HwaZ1DhvjzXXuFhcR7hY7Sh9pl7MmoWKEjzwcdA=
-github.com/opendatahub-io/mcp-lifecycle-operator v0.0.0-20261029140045-8314e418ac74 h1:KeakzkZQUJt8c/FtYyEtYP3FRmVRPYkHLYCfGb8Rigc=
-github.com/opendatahub-io/mcp-lifecycle-operator v0.0.0-20261029140045-8314e418ac74/go.mod h1:Lk/FNkdppKOXyj5KEgJs+jq3BEoT0KSZxmOzMnkf2dY=
+github.com/opendatahub-io/mcp-lifecycle-operator v0.0.0-20261030135940-54191cfbfd12 h1:LCDj300PKQUHmxc7SSWM8xfIiI+2jVGuPRI1kgKbB/U=
+github.com/opendatahub-io/mcp-lifecycle-operator v0.0.0-20261030135940-54191cfbfd12/go.mod h1:9cKx8WuyJgrblDVpFKiliyntXycd4IelG4rcivg/8PA=
 github.com/opendatahub-io/odh-platform-utilities v0.6.0 h1:diF9LHcd879ElWegajD1TlfGOIJK0eXlQQqortMPsB8=
 github.com/opendatahub-io/odh-platform-utilities v0.6.0/go.mod h1:/yYTo/gyspyobqyy67oS557D8UN9VH1IuixJgfP3qYg=
 github.com/openshift/api v0.0.0-20261029222750-c757da50cb18 h1:3W9uZkHbIUft+Nuqqp/eq+GEyI22yT57oH0YcW903As=
@@ -652,8 +652,8 @@ k8s.io/kube-openapi v0.0.0-20260721132016-d427ff9ee9ad/go.mod h1:0/mqHCVhlumdJ3B
 k8s.io/streaming v0.37.2 h1:xmzp9nbqIbjvsRcqrBYa+K5XPQ6Jy/Dm3zZ8mN916AI=
 k8s.io/streaming v0.37.2/go.mod h1:APlJR26ZWRcVy5bIEj0QRrKUXROtBHPcxl2NT7EAzPU=
 k8s.io/utils v0.0.0-20210819203725-bdf08cb9a70a/go.mod h1:jPW/WVKK9YHAvNhRxK0md/EJ228hCsBRufyofKtW8HA=
-k8s.io/utils v0.0.0-20260707023825-cf1189d6abe3 h1:jVkFFVfXdXP74B/zbO3hM3hpSFD0xvhQ5U686DPurkE=
-k8s.io/utils v0.0.0-20260707023825-cf1189d6abe3/go.mod h1:M2s5JB1lIYP3jzZdorPLHXIPJzt9vv2muW5a6L9DtNM=
+k8s.io/utils v0.0.0-20261023123148-ca04ba58ecab h1:pjQrNLaF//ytZtWwCAHtW+pqwSKjtWDqzA8+TCX37RI=
+k8s.io/utils v0.0.0-20261023123148-ca04ba58ecab/go.mod h1:DdQ0BJxlQtuMlKDqdg7X5IMMQCXIk2b3d1/4M9OhUYo=
 rsc.io/binaryregexp v0.2.0/go.mod h1:qTv7/COck+e2FymRvadv62gMdZztPaShugOCi3I+8D8=
 rsc.io/quote/v3 v3.1.0/go.mod h1:yEA65RcK8LyAZtP9Kv3t0HmxON59tX3rD+tICJqUlj0=
 rsc.io/sampler v1.3.0/go.mod h1:T1hPZKmBbMNahiBKFy5HrXp6adAjACjK9JXDnKaTXpA=

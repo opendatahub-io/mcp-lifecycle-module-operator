@@ -5321,6 +5321,7 @@ spec:
         - --health-probe-bind-address=:8081
         - --logging-configmap-name=mcp-lifecycle-operator-config
         - --logging-configmap-key=log-level
+        - --metrics-cert-path=/tmp/k8s-metrics-server/metrics-certs
         - --enable-webhook
         command:
         - /manager
@@ -5331,7 +5332,7 @@ spec:
               fieldPath: metadata.namespace
         - name: GOMEMLIMIT
           value: 460MiB
-        image: quay.io/opendatahub/odh-mcp-lifecycle-operator@sha256:b7f3469595e552675ab3e3a4e75e0c074bacdf5b393051ec1b80214deaee54d9
+        image: quay.io/opendatahub/odh-mcp-lifecycle-operator@sha256:8d98699b531fd2ffa670af8249ddb1268035571788af2bb75f6036fdf45ca44b
         livenessProbe:
           httpGet:
             path: /healthz
@@ -5369,6 +5370,9 @@ spec:
         - mountPath: /tmp/k8s-webhook-server/serving-certs
           name: cert
           readOnly: true
+        - mountPath: /tmp/k8s-metrics-server/metrics-certs
+          name: metrics-certs
+          readOnly: true
       serviceAccountName: mcp-lifecycle-operator-controller-manager
       terminationGracePeriodSeconds: 10
       volumes:
@@ -5376,6 +5380,34 @@ spec:
         secret:
           defaultMode: 420
           secretName: mcplo-webhook-server-cert
+      - name: metrics-certs
+        secret:
+          items:
+          - key: ca.crt
+            path: ca.crt
+          - key: tls.crt
+            path: tls.crt
+          - key: tls.key
+            path: tls.key
+          optional: false
+          secretName: mcplo-metrics-server-cert
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: mcp-lifecycle-operator
+  name: mcp-lifecycle-operator-metrics-certs
+  namespace: mcp-lifecycle-operator-system
+spec:
+  dnsNames:
+  - mcp-lifecycle-operator-controller-manager-metrics-service.mcp-lifecycle-operator-system.svc
+  - mcp-lifecycle-operator-controller-manager-metrics-service.mcp-lifecycle-operator-system.svc.cluster.local
+  issuerRef:
+    kind: Issuer
+    name: mcp-lifecycle-operator-selfsigned-issuer
+  secretName: mcplo-metrics-server-cert
 ---
 apiVersion: cert-manager.io/v1
 kind: Certificate
@@ -5421,7 +5453,12 @@ spec:
     port: https
     scheme: https
     tlsConfig:
-      insecureSkipVerify: true
+      ca:
+        secret:
+          key: ca.crt
+          name: mcplo-metrics-server-cert
+      insecureSkipVerify: false
+      serverName: mcp-lifecycle-operator-controller-manager-metrics-service.mcp-lifecycle-operator-system.svc
   selector:
     matchLabels:
       app.kubernetes.io/name: mcp-lifecycle-operator
