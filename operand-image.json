@@ -1,4 +1,4 @@
 {
-  "sourceCommit": "638cce31a30c5937a1d8b36f6a4cd38358ead793",
-  "image": "quay.io/opendatahub/odh-mcp-lifecycle-operator@sha256:35d7f21face09827f933f586a5d2fbaade7fbee14dd43cb9c19a093ee4394640"
+  "sourceCommit": "8314e418ac7440a67cd098f603aeca58f06880fc",
+  "image": "quay.io/opendatahub/odh-mcp-lifecycle-operator@sha256:b7f3469595e552675ab3e3a4e75e0c074bacdf5b393051ec1b80214deaee54d9"
 }
