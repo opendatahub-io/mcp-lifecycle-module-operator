@@ -7,15 +7,15 @@ require (
 	github.com/manifestival/manifestival v0.7.2
 	github.com/onsi/ginkgo/v2 v2.33.1
 	github.com/onsi/gomega v1.44.0
-	github.com/opendatahub-io/odh-platform-utilities v0.5.0
-	github.com/openshift/api v0.0.0-20261015135644-e07c1fd9d99c
-	github.com/openshift/controller-runtime-common v0.0.0-20261008111711-8ec0dc844066
-	github.com/openshift/library-go v0.0.0-20261015064245-e69210d7ecee
-	golang.org/x/mod v0.41.0
-	k8s.io/api v0.37.1
-	k8s.io/apiextensions-apiserver v0.37.1
-	k8s.io/apimachinery v0.37.1
-	k8s.io/client-go v0.37.1
+	github.com/opendatahub-io/odh-platform-utilities v0.6.0
+	github.com/openshift/api v0.0.0-20261029222750-c757da50cb18
+	github.com/openshift/controller-runtime-common v0.0.0-20261026124434-bdfc411d93cd
+	github.com/openshift/library-go v0.0.0-20261028054900-dbcad7febe41
+	golang.org/x/mod v0.42.0
+	k8s.io/api v0.37.2
+	k8s.io/apiextensions-apiserver v0.37.2
+	k8s.io/apimachinery v0.37.2
+	k8s.io/client-go v0.37.2
 	sigs.k8s.io/controller-runtime v0.25.2
 	sigs.k8s.io/e2e-framework v0.7.0
 	sigs.k8s.io/gateway-api v1.6.3
@@ -91,18 +91,18 @@ require (
 	golang.org/x/term v0.46.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
 	golang.org/x/time v0.16.0 // indirect
-	golang.org/x/tools v0.50.0 // indirect
+	golang.org/x/tools v0.51.0 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.5.0 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 	gopkg.in/evanphx/json-patch.v4 v4.13.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	gotest.tools/gotestsum v1.13.0 // indirect
-	k8s.io/apiserver v0.37.1 // indirect
-	k8s.io/component-base v0.37.1 // indirect
+	k8s.io/apiserver v0.37.2 // indirect
+	k8s.io/component-base v0.37.2 // indirect
 	k8s.io/klog/v2 v2.140.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20260721132016-d427ff9ee9ad // indirect
-	k8s.io/streaming v0.37.1 // indirect
+	k8s.io/streaming v0.37.2 // indirect
 	k8s.io/utils v0.0.0-20260707023825-cf1189d6abe3 // indirect
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
