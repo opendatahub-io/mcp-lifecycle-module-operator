@@ -17,10 +17,12 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"flag"
 	"os"
 
 	configv1 "github.com/openshift/api/config/v1"
+	utiltls "github.com/openshift/controller-runtime-common/pkg/tls"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -38,7 +40,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	"github.com/opendatahub-io/odh-platform-utilities/pkg/deploy"
 	odhLabels "github.com/opendatahub-io/odh-platform-utilities/pkg/metadata/labels"
@@ -129,9 +130,16 @@ func main() {
 		odhLabels.PlatformPartOf: v1alpha1.MCPLifecycleOperatorServiceName,
 	})
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	config := ctrl.GetConfigOrDie()
+	metricsOptions, tlsConfig, err := controller.MetricsOptionsWithTLSConfig(context.Background(), config)
+	if err != nil {
+		log.Error(err, "unable to resolve metrics TLS options")
+		os.Exit(1)
+	}
+
+	mgr, err := ctrl.NewManager(config, ctrl.Options{
 		Scheme:                 scheme,
-		Metrics:                metricsserver.Options{BindAddress: "0"},
+		Metrics:                metricsOptions,
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "mcp-lifecycle-module-operator-leader",
@@ -206,8 +214,30 @@ func main() {
 		os.Exit(1)
 	}
 
+	signalCtx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
+	defer cancel()
+	if tlsConfig.APIAvailable {
+		watcher := &utiltls.SecurityProfileWatcher{
+			Client:                    mgr.GetClient(),
+			InitialTLSProfileSpec:     tlsConfig.ProfileSpec,
+			InitialTLSAdherencePolicy: tlsConfig.Adherence,
+			OnProfileChange: func(_ context.Context, _, _ configv1.TLSProfileSpec) {
+				log.Info("TLS profile changed, restarting to reload metrics TLS configuration")
+				cancel()
+			},
+			OnAdherencePolicyChange: func(_ context.Context, _, _ configv1.TLSAdherencePolicy) {
+				log.Info("TLS adherence policy changed, restarting to reload metrics TLS configuration")
+				cancel()
+			},
+		}
+		if err := watcher.SetupWithManager(mgr); err != nil {
+			log.Error(err, "unable to set up TLS profile watcher")
+			os.Exit(1)
+		}
+	}
+
 	log.Info("starting manager")
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+	if err := mgr.Start(signalCtx); err != nil {
 		log.Error(err, "problem running manager")
 		os.Exit(1)
 	}

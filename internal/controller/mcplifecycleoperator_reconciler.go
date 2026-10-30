@@ -222,7 +222,7 @@ func (r *MCPLifecycleOperatorReconciler) reconcile(ctx context.Context, cr *v1al
 
 	r.tryRegisterGatewayWatches(ctx)
 
-	tlsMinVersion, tlsCipherSuites, tlsGroups, err := fetchTLSConfig(ctx, r.Client)
+	tlsConfig, err := ResolveTLSConfig(ctx, r.Client)
 	if err != nil {
 		cm.MarkFalse(v1alpha1.ConditionMCPLifecycleOperatorAvailable,
 			"TLSConfigFetchFailed", fmt.Sprintf("Failed to fetch TLS config: %v", err))
@@ -230,6 +230,9 @@ func (r *MCPLifecycleOperatorReconciler) reconcile(ctx context.Context, cr *v1al
 
 		return ctrl.Result{}, fmt.Errorf("fetching TLS config: %w", err)
 	}
+	tlsMinVersion := tlsConfig.MinVersion
+	tlsCipherSuites := tlsConfig.CipherSuites
+	tlsGroups := tlsConfig.Groups
 
 	log.V(1).Info("TLS configuration resolved", "minVersion", tlsMinVersion, "groups", tlsGroups)
 
@@ -270,6 +273,9 @@ func (r *MCPLifecycleOperatorReconciler) reconcile(ctx context.Context, cr *v1al
 	}
 
 	if result, ready := r.checkDeploymentsReady(ctx, desired, cm); !ready {
+		if tlsConfig.UsedTransientFallback && result.RequeueAfter == 0 {
+			result.RequeueAfter = defaultRequeueDelay
+		}
 		return result, nil
 	}
 
@@ -309,7 +315,11 @@ func (r *MCPLifecycleOperatorReconciler) reconcile(ctx context.Context, cr *v1al
 	// never returns an error, so a pending/running/failed migration never
 	// degrades Ready/Degraded. It returns a requeue while the migration is in
 	// progress and zero once it has succeeded.
-	return r.reconcileStorageMigration(ctx, cr, cm), nil
+	result := r.reconcileStorageMigration(ctx, cr, cm)
+	if tlsConfig.UsedTransientFallback && result.RequeueAfter == 0 {
+		result.RequeueAfter = defaultRequeueDelay
+	}
+	return result, nil
 }
 
 // updateBaseStatus is deferred in every reconcile to ensure observedGeneration,
@@ -485,6 +495,19 @@ func (r *MCPLifecycleOperatorReconciler) checkDeploymentsReady(ctx context.Conte
 // expired continue token restarts pagination up to conversionCheckMaxRestarts
 // times and then requeues, so a single call always does bounded work regardless
 // of how many MCPServers are stored or how fast they churn.
+// isNotRegisteredError reports whether the error chain contains a
+// runtime.IsNotRegisteredError, which the dynamic client surfaces for kinds
+// absent from the server's scheme.
+func isNotRegisteredError(err error) bool {
+	for err != nil {
+		if runtime.IsNotRegisteredError(err) {
+			return true
+		}
+		err = errors.Unwrap(err)
+	}
+	return false
+}
+
 func (r *MCPLifecycleOperatorReconciler) checkConversionHealth(ctx context.Context, cm *v1alpha1.ConditionsManager) (ctrl.Result, bool) {
 	log := logf.FromContext(ctx)
 
