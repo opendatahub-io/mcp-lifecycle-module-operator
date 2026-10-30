@@ -1,3 +1,5 @@
+//go:build e2e
+
 /*
 Copyright 2026.
 
@@ -19,10 +21,11 @@ package e2e
 import (
 	"context"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
-	. "github.com/onsi/ginkgo/v2"
+	"github.com/go-logr/logr"
 	. "github.com/onsi/gomega"
 	admissionv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -47,9 +50,7 @@ var restConfig *rest.Config
 var k8sClient client.Client
 
 const (
-	operandDeployment        = "mcp-lifecycle-operator-controller-manager"
-	operandCRD               = "mcpservers.mcp.x-k8s.io"
-	moduleOperatorDeployment = "mcp-lifecycle-module-operator-controller-manager"
+	operandCRD = "mcpservers.mcp.x-k8s.io"
 
 	timeout            = 5 * time.Minute
 	interval           = 5 * time.Second
@@ -59,93 +60,113 @@ const (
 
 var operandNamespace string
 
-func TestE2E(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "MCPLMO E2E Suite")
+var (
+	suiteOnce  sync.Once
+	suiteReady bool
+	suiteOwner string
+)
+
+// prepareSuite connects to the prepared installation once per test binary. The
+// first test to call it reports any setup failure; later tests fail with a
+// pointer to that test instead of retrying setup or skipping.
+func prepareSuite(t *testing.T) {
+	t.Helper()
+	suiteOnce.Do(func() {
+		suiteOwner = t.Name()
+		setupSuite(t)
+		suiteReady = true
+	})
+	if !suiteReady {
+		t.Fatalf("suite setup failed in %s; see its output", suiteOwner)
+	}
 }
 
-var _ = BeforeSuite(func() {
-	logf.SetLogger(GinkgoLogr)
-	config, _ := GinkgoConfiguration()
-	Expect(config.ParallelTotal).To(Equal(1), "MCPLMO tests require one Ginkgo process and exclusive access to the MCP component")
+func setupSuite(t *testing.T) {
+	g := NewWithT(t)
+	logf.SetLogger(logr.Discard())
 	scheme := runtime.NewScheme()
-	Expect(admissionv1.AddToScheme(scheme)).To(Succeed())
-	Expect(corev1.AddToScheme(scheme)).To(Succeed())
-	Expect(appsv1.AddToScheme(scheme)).To(Succeed())
-	Expect(discoveryv1.AddToScheme(scheme)).To(Succeed())
-	Expect(networkingv1.AddToScheme(scheme)).To(Succeed())
-	Expect(extv1.AddToScheme(scheme)).To(Succeed())
-	Expect(v1alpha1.AddToScheme(scheme)).To(Succeed())
+	g.Expect(admissionv1.AddToScheme(scheme)).To(Succeed())
+	g.Expect(corev1.AddToScheme(scheme)).To(Succeed())
+	g.Expect(appsv1.AddToScheme(scheme)).To(Succeed())
+	g.Expect(discoveryv1.AddToScheme(scheme)).To(Succeed())
+	g.Expect(networkingv1.AddToScheme(scheme)).To(Succeed())
+	g.Expect(extv1.AddToScheme(scheme)).To(Succeed())
+	g.Expect(v1alpha1.AddToScheme(scheme)).To(Succeed())
 
 	cfg, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
 		clientcmd.NewDefaultClientConfigLoadingRules(),
 		&clientcmd.ConfigOverrides{},
 	).ClientConfig()
-	Expect(err).NotTo(HaveOccurred())
+	g.Expect(err).NotTo(HaveOccurred())
 	cfg.Timeout = 30 * time.Second
 	restConfig = cfg
 
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme})
-	Expect(err).NotTo(HaveOccurred())
+	g.Expect(err).NotTo(HaveOccurred())
 	ctx := context.Background()
-	By("Discovering the prepared module installation namespace")
+	t.Log("Discovering the prepared module installation namespace")
 	operandNamespace, err = discoverSystemNamespace(ctx, k8sClient, os.Getenv("SYSTEM_NAMESPACE"))
-	Expect(err).NotTo(HaveOccurred())
-	GinkgoWriter.Printf("Using system namespace %q\n", operandNamespace)
+	g.Expect(err).NotTo(HaveOccurred())
+	t.Logf("Using system namespace %q", operandNamespace)
 
-	By("Checking the prepared module installation and Managed singleton")
-	Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: operandNamespace, Name: moduleOperatorDeployment}, &appsv1.Deployment{})).To(Succeed())
+	t.Log("Checking the prepared module installation and Managed singleton")
+	g.Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: operandNamespace, Name: moduleOperatorDeployment}, &appsv1.Deployment{})).To(Succeed())
 	cr := &v1alpha1.MCPLifecycleOperator{}
-	Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "default"}, cr)).To(Succeed(), "create MCPLifecycleOperator/default before running tests")
-	Expect(cr.DeletionTimestamp).To(BeNil())
-	Expect(cr.Spec.ManagementState).To(Equal(platformcommon.Managed), "prepare the singleton as Managed before running tests")
-	waitForOperandReady(ctx)
-})
-
-var _ = BeforeEach(func() {
-	standalone, err := CurrentSpecReport().MatchesLabelFilter("standalone")
-	Expect(err).NotTo(HaveOccurred())
-	if !standalone {
-		return
-	}
-	cr := &v1alpha1.MCPLifecycleOperator{}
-	Expect(k8sClient.Get(context.Background(), types.NamespacedName{Name: "default"}, cr)).To(Succeed())
-	if len(cr.OwnerReferences) != 0 {
-		Skip("standalone tests require an unowned MCPLifecycleOperator singleton; this installation has a parent owner")
-	}
-})
-
-func prepareTest() {
-	waitForOperandReady(context.Background())
+	g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "default"}, cr)).To(Succeed(), "create MCPLifecycleOperator/default before running tests")
+	g.Expect(cr.DeletionTimestamp).To(BeNil())
+	g.Expect(cr.Spec.ManagementState).To(Equal(platformcommon.Managed), "prepare the singleton as Managed before running tests")
+	waitForOperandReady(t, ctx)
 }
 
-func createTestNamespace(ctx context.Context, prefix string) string {
+// prepareTest connects to the installation and waits for a ready operand.
+func prepareTest(t *testing.T) {
+	t.Helper()
+	prepareSuite(t)
+	waitForOperandReady(t, context.Background())
+}
+
+// requireUnownedSingleton skips tests that delete the singleton when a parent
+// owner (such as RHOAI) manages it and would recreate or fight over it.
+func requireUnownedSingleton(t *testing.T) {
+	t.Helper()
+	cr := &v1alpha1.MCPLifecycleOperator{}
+	NewWithT(t).Expect(k8sClient.Get(context.Background(), types.NamespacedName{Name: "default"}, cr)).To(Succeed())
+	if len(cr.OwnerReferences) != 0 {
+		t.Skip("standalone tests require an unowned MCPLifecycleOperator singleton; this installation has a parent owner")
+	}
+}
+
+func createTestNamespace(t *testing.T, ctx context.Context, prefix string) string {
+	t.Helper()
+	g := NewWithT(t)
 	namespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{GenerateName: prefix}}
-	Expect(k8sClient.Create(ctx, namespace)).To(Succeed())
-	DeferCleanup(func() {
+	g.Expect(k8sClient.Create(ctx, namespace)).To(Succeed())
+	t.Cleanup(func() {
 		uid := namespace.UID
 		err := k8sClient.Delete(ctx, namespace, client.Preconditions{UID: &uid})
-		Expect(err == nil || apierrors.IsNotFound(err)).To(BeTrue(), "delete fixture namespace: %v", err)
-		Eventually(func() bool {
+		g.Expect(err == nil || apierrors.IsNotFound(err)).To(BeTrue(), "delete fixture namespace: %v", err)
+		g.Eventually(func() bool {
 			return apierrors.IsNotFound(k8sClient.Get(ctx, types.NamespacedName{Name: namespace.Name}, &corev1.Namespace{}))
 		}, timeout, interval).Should(BeTrue(), "fixture namespace %s still exists", namespace.Name)
 	})
 	return namespace.Name
 }
 
-func waitForOperandReady(ctx context.Context) {
-	By("Waiting for the operand namespace to be created")
-	Eventually(func(g Gomega) {
+func waitForOperandReady(t *testing.T, ctx context.Context) {
+	t.Helper()
+	g := NewWithT(t)
+	t.Log("Waiting for the operand namespace to be created")
+	g.Eventually(func(g Gomega) {
 		ns := &corev1.Namespace{}
 		g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: operandNamespace}, ns)).To(Succeed())
 	}, timeout, interval).Should(Succeed())
 
-	By("Waiting for the operand CRD to be installed")
-	Eventually(func(g Gomega) {
+	t.Log("Waiting for the operand CRD to be installed")
+	g.Eventually(func(g Gomega) {
 		crd := &extv1.CustomResourceDefinition{}
 		g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: operandCRD}, crd)).To(Succeed())
 	}, timeout, interval).Should(Succeed())
 
-	By("Waiting for the operand rollout and readiness propagation")
-	Eventually(func() error { return checkReadiness(ctx) }, timeout, interval).Should(Succeed())
+	t.Log("Waiting for the operand rollout and readiness propagation")
+	g.Eventually(func() error { return checkReadiness(ctx) }, timeout, interval).Should(Succeed())
 }

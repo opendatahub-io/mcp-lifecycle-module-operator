@@ -1,3 +1,5 @@
+//go:build e2e
+
 /*
 Copyright 2026.
 
@@ -18,8 +20,8 @@ package e2e
 
 import (
 	"context"
+	"testing"
 
-	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -33,81 +35,91 @@ const (
 	gatewayCRD       = "gateways.gateway.networking.k8s.io"
 )
 
-var _ = Describe("Gateway Discovery", func() {
+// prepareGatewayTest skips when the optional gateway CRDs are absent and
+// otherwise returns a fixture namespace that is deleted after the test.
+func prepareGatewayTest(t *testing.T) string {
+	t.Helper()
+	prepareSuite(t)
 	ctx := context.Background()
-	var gatewayTestNamespace string
+	if !crdInstalled(ctx, mcpGatewayExtCRD) || !crdInstalled(ctx, gatewayCRD) {
+		t.Skip("MCPGatewayExtension or Gateway CRD not installed")
+	}
 
-	BeforeEach(func() {
-		if !crdInstalled(ctx, mcpGatewayExtCRD) || !crdInstalled(ctx, gatewayCRD) {
-			Skip("MCPGatewayExtension or Gateway CRD not installed")
-		}
+	waitForOperandReady(t, ctx)
+	return createTestNamespace(t, ctx, "mcplmo-e2e-gw-")
+}
 
-		prepareTest()
-		gatewayTestNamespace = createTestNamespace(ctx, "mcplmo-e2e-gw-")
-	})
+// TestE2EGatewayDiscovery verifies MCPGatewayExtension and Gateway resources are discovered in status.
+func TestE2EGatewayDiscovery(t *testing.T) {
+	gatewayTestNamespace := prepareGatewayTest(t)
+	g := NewWithT(t)
+	ctx := context.Background()
 
-	It("should discover MCPGatewayExtension and Gateway resources in status", func() {
-		gw := newGatewayResource(gatewayTestNamespace, "test-gw", "mcp", "mcps")
-		Expect(k8sClient.Create(ctx, gw)).To(Succeed())
+	gw := newGatewayResource(gatewayTestNamespace, "test-gw", "mcp", "mcps")
+	g.Expect(k8sClient.Create(ctx, gw)).To(Succeed())
 
-		mcpge := newMCPGatewayExtensionResource(gatewayTestNamespace, "test-ext", "test-gw", gatewayTestNamespace, "mcp")
-		Expect(k8sClient.Create(ctx, mcpge)).To(Succeed())
+	mcpge := newMCPGatewayExtensionResource(gatewayTestNamespace, "test-ext", "test-gw", gatewayTestNamespace, "mcp")
+	g.Expect(k8sClient.Create(ctx, mcpge)).To(Succeed())
 
-		By("Verifying status.availableMCPGateways contains the discovered gateway")
-		Eventually(func(g Gomega) {
-			cr := &v1alpha1.MCPLifecycleOperator{}
-			g.Expect(k8sClient.Get(ctx, types.NamespacedName{
-				Name: v1alpha1.MCPLifecycleOperatorInstanceName,
-			}, cr)).To(Succeed())
+	t.Log("Verifying status.availableMCPGateways contains the discovered gateway")
+	g.Eventually(func(g Gomega) {
+		cr := &v1alpha1.MCPLifecycleOperator{}
+		g.Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Name: v1alpha1.MCPLifecycleOperatorInstanceName,
+		}, cr)).To(Succeed())
 
-			g.Expect(cr.Status.AvailableMCPGateways).To(ContainElement(SatisfyAll(
-				HaveField("Name", "test-ext"),
-				HaveField("Namespace", gatewayTestNamespace),
-				HaveField("Gateway.Name", "test-gw"),
-				HaveField("Gateway.Namespace", gatewayTestNamespace),
-				HaveField("Gateway.Listeners", ContainElements(
-					SatisfyAll(HaveField("Name", "mcp"), HaveField("Hostname", "*.mcp.example.com")),
-					SatisfyAll(HaveField("Name", "mcps"), HaveField("Hostname", "*.mcps.example.com")),
-				)),
-			)))
-		}, timeout, interval).Should(Succeed())
-	})
+		g.Expect(cr.Status.AvailableMCPGateways).To(ContainElement(SatisfyAll(
+			HaveField("Name", "test-ext"),
+			HaveField("Namespace", gatewayTestNamespace),
+			HaveField("Gateway.Name", "test-gw"),
+			HaveField("Gateway.Namespace", gatewayTestNamespace),
+			HaveField("Gateway.Listeners", ContainElements(
+				SatisfyAll(HaveField("Name", "mcp"), HaveField("Hostname", "*.mcp.example.com")),
+				SatisfyAll(HaveField("Name", "mcps"), HaveField("Hostname", "*.mcps.example.com")),
+			)),
+		)))
+	}, timeout, interval).Should(Succeed())
+}
 
-	It("should update status when MCPGatewayExtension is removed", func() {
-		gw := newGatewayResource(gatewayTestNamespace, "test-gw", "mcp")
-		Expect(k8sClient.Create(ctx, gw)).To(Succeed())
+// TestE2EGatewayExtensionRemoval verifies status is updated when an MCPGatewayExtension is removed.
+func TestE2EGatewayExtensionRemoval(t *testing.T) {
+	gatewayTestNamespace := prepareGatewayTest(t)
+	g := NewWithT(t)
+	ctx := context.Background()
 
-		mcpge := newMCPGatewayExtensionResource(gatewayTestNamespace, "test-ext", "test-gw", gatewayTestNamespace, "mcp")
-		Expect(k8sClient.Create(ctx, mcpge)).To(Succeed())
+	gw := newGatewayResource(gatewayTestNamespace, "test-gw", "mcp")
+	g.Expect(k8sClient.Create(ctx, gw)).To(Succeed())
 
-		By("Waiting for the gateway to appear in status")
-		Eventually(func(g Gomega) {
-			cr := &v1alpha1.MCPLifecycleOperator{}
-			g.Expect(k8sClient.Get(ctx, types.NamespacedName{
-				Name: v1alpha1.MCPLifecycleOperatorInstanceName,
-			}, cr)).To(Succeed())
-			g.Expect(cr.Status.AvailableMCPGateways).To(ContainElement(SatisfyAll(
-				HaveField("Name", "test-ext"),
-				HaveField("Namespace", gatewayTestNamespace),
-			)))
-		}, timeout, interval).Should(Succeed())
+	mcpge := newMCPGatewayExtensionResource(gatewayTestNamespace, "test-ext", "test-gw", gatewayTestNamespace, "mcp")
+	g.Expect(k8sClient.Create(ctx, mcpge)).To(Succeed())
 
-		By("Deleting the MCPGatewayExtension")
-		Expect(k8sClient.Delete(ctx, mcpge)).To(Succeed())
+	t.Log("Waiting for the gateway to appear in status")
+	g.Eventually(func(g Gomega) {
+		cr := &v1alpha1.MCPLifecycleOperator{}
+		g.Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Name: v1alpha1.MCPLifecycleOperatorInstanceName,
+		}, cr)).To(Succeed())
+		g.Expect(cr.Status.AvailableMCPGateways).To(ContainElement(SatisfyAll(
+			HaveField("Name", "test-ext"),
+			HaveField("Namespace", gatewayTestNamespace),
+		)))
+	}, timeout, interval).Should(Succeed())
 
-		By("Verifying status.availableMCPGateways becomes empty")
-		Eventually(func(g Gomega) {
-			cr := &v1alpha1.MCPLifecycleOperator{}
-			g.Expect(k8sClient.Get(ctx, types.NamespacedName{
-				Name: v1alpha1.MCPLifecycleOperatorInstanceName,
-			}, cr)).To(Succeed())
-			g.Expect(cr.Status.AvailableMCPGateways).NotTo(ContainElement(SatisfyAll(
-				HaveField("Name", "test-ext"),
-				HaveField("Namespace", gatewayTestNamespace),
-			)))
-		}, timeout, interval).Should(Succeed())
-	})
-})
+	t.Log("Deleting the MCPGatewayExtension")
+	g.Expect(k8sClient.Delete(ctx, mcpge)).To(Succeed())
+
+	t.Log("Verifying status.availableMCPGateways becomes empty")
+	g.Eventually(func(g Gomega) {
+		cr := &v1alpha1.MCPLifecycleOperator{}
+		g.Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Name: v1alpha1.MCPLifecycleOperatorInstanceName,
+		}, cr)).To(Succeed())
+		g.Expect(cr.Status.AvailableMCPGateways).NotTo(ContainElement(SatisfyAll(
+			HaveField("Name", "test-ext"),
+			HaveField("Namespace", gatewayTestNamespace),
+		)))
+	}, timeout, interval).Should(Succeed())
+}
 
 func crdInstalled(ctx context.Context, name string) bool {
 	crd := &extv1.CustomResourceDefinition{}
