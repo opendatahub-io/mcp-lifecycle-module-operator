@@ -11,6 +11,25 @@ on:
     - cron: "0 6 * * *"
 
 jobs:
+  dispatch-release-updates:
+    if: github.event_name == 'schedule'
+    permissions:
+      actions: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch release updates
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUPPORTED_BRANCHES: |
+            rhoai-3.6
+        run: |
+          while IFS= read -r branch; do
+            [[ -z "$branch" ]] && continue
+            echo "Dispatching operand update for $branch"
+            gh workflow run update-operand-manifests.yml \
+              --repo "$GITHUB_REPOSITORY" --ref "$branch"
+          done <<< "$SUPPORTED_BRANCHES"
+
   update-manifests:
     permissions:
       contents: read
