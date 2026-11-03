@@ -52,6 +52,11 @@ var k8sClient client.Client
 const (
 	operandCRD = "mcpservers.mcp.x-k8s.io"
 
+	// mcpServerImageRef pins the MCP server operand image to a specific
+	// digest (v0.0.66) instead of the floating :latest tag, so e2e runs are
+	// reproducible. Managed centrally here and referenced by the tests.
+	mcpServerImageRef = "quay.io/containers/kubernetes_mcp_server@sha256:6d650f4bd6ac303ad82713c997e73a2d001602f9bf17392c9b9a0e30e29c6423"
+
 	timeout            = 5 * time.Minute
 	interval           = 5 * time.Second
 	consistentDuration = 30 * time.Second

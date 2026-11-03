@@ -161,7 +161,7 @@ func TestE2ELifecycleRemovedReinstall(t *testing.T) {
 		image, found, err := unstructured.NestedString(retained.Object, "spec", "source", "containerImage", "ref")
 		g.Expect(err).NotTo(HaveOccurred())
 		g.Expect(found).To(BeTrue())
-		g.Expect(image).To(Equal("quay.io/containers/kubernetes_mcp_server:latest"))
+		g.Expect(image).To(Equal(mcpServerImageRef))
 
 		replicas, found, err := unstructured.NestedInt64(retained.Object, "spec", "runtime", "replicas")
 		g.Expect(err).NotTo(HaveOccurred())

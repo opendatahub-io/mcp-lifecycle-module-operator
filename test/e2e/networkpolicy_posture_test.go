@@ -224,7 +224,7 @@ func newMCPServer(namespace, name string, ingressFrom []interface{}) *unstructur
 		"source": map[string]interface{}{
 			"type": "ContainerImage",
 			"containerImage": map[string]interface{}{
-				"ref": "quay.io/containers/kubernetes_mcp_server:latest",
+				"ref": mcpServerImageRef,
 			},
 		},
 		"config": map[string]interface{}{"port": serverPortValue},

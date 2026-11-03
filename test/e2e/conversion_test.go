@@ -60,7 +60,7 @@ func TestE2EConversionRoundTrip(t *testing.T) {
 		"spec": map[string]interface{}{
 			"source": map[string]interface{}{
 				"type":           "ContainerImage",
-				"containerImage": map[string]interface{}{"ref": "quay.io/containers/kubernetes_mcp_server:latest"},
+				"containerImage": map[string]interface{}{"ref": mcpServerImageRef},
 			},
 			"config":  map[string]interface{}{"port": serverPort},
 			"runtime": map[string]interface{}{"replicas": int64(0)},
