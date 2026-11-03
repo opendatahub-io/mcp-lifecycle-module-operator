@@ -46,7 +46,8 @@ func TestFetchTLSConfig_IntermediateProfile(t *testing.T) {
 		WithObjects(apiServer).
 		Build()
 
-	minVersion, cipherSuites, _, err := fetchTLSConfig(context.Background(), cli)
+	resolved, err := ResolveTLSConfig(context.Background(), cli)
+	minVersion, cipherSuites := resolved.MinVersion, resolved.CipherSuites
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -91,7 +92,8 @@ func TestFetchTLSConfig_ModernProfile(t *testing.T) {
 		WithObjects(apiServer).
 		Build()
 
-	minVersion, cipherSuites, _, err := fetchTLSConfig(context.Background(), cli)
+	resolved, err := ResolveTLSConfig(context.Background(), cli)
+	minVersion, cipherSuites := resolved.MinVersion, resolved.CipherSuites
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -127,7 +129,8 @@ func TestFetchTLSConfig_CustomProfile(t *testing.T) {
 		WithObjects(apiServer).
 		Build()
 
-	minVersion, cipherSuites, _, err := fetchTLSConfig(context.Background(), cli)
+	resolved, err := ResolveTLSConfig(context.Background(), cli)
+	minVersion, cipherSuites := resolved.MinVersion, resolved.CipherSuites
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -151,7 +154,8 @@ func TestFetchTLSConfig_NilProfile_ReturnsIntermediateDefaults(t *testing.T) {
 		WithObjects(apiServer).
 		Build()
 
-	minVersion, cipherSuites, _, err := fetchTLSConfig(context.Background(), cli)
+	resolved, err := ResolveTLSConfig(context.Background(), cli)
+	minVersion, cipherSuites := resolved.MinVersion, resolved.CipherSuites
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -170,7 +174,8 @@ func TestFetchTLSConfig_APIServerNotFound_ReturnsDefaults(t *testing.T) {
 		WithScheme(tlsTestScheme).
 		Build()
 
-	minVersion, cipherSuites, _, err := fetchTLSConfig(context.Background(), cli)
+	resolved, err := ResolveTLSConfig(context.Background(), cli)
+	minVersion, cipherSuites := resolved.MinVersion, resolved.CipherSuites
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -298,7 +303,8 @@ func TestFetchTLSConfig_CustomProfile_WithGroups(t *testing.T) {
 		WithObjects(apiServer).
 		Build()
 
-	_, _, groups, err := fetchTLSConfig(context.Background(), cli)
+	resolved, err := ResolveTLSConfig(context.Background(), cli)
+	groups := resolved.Groups
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -317,7 +323,8 @@ func TestFetchTLSConfig_LegacyUsesIntermediateDefaults(t *testing.T) {
 		},
 	}
 	cli := fake.NewClientBuilder().WithScheme(tlsTestScheme).WithObjects(apiServer).Build()
-	minVersion, cipherSuites, _, err := fetchTLSConfig(context.Background(), cli)
+	resolved, err := ResolveTLSConfig(context.Background(), cli)
+	minVersion, cipherSuites := resolved.MinVersion, resolved.CipherSuites
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -334,7 +341,8 @@ func TestFetchTLSConfig_NoOpinionUsesIntermediateDefaults(t *testing.T) {
 		},
 	}
 	cli := fake.NewClientBuilder().WithScheme(tlsTestScheme).WithObjects(apiServer).Build()
-	minVersion, cipherSuites, _, err := fetchTLSConfig(context.Background(), cli)
+	resolved, err := ResolveTLSConfig(context.Background(), cli)
+	minVersion, cipherSuites := resolved.MinVersion, resolved.CipherSuites
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -352,7 +360,8 @@ func TestFetchTLSConfig_UnknownAdherenceHonorsProfile(t *testing.T) {
 		},
 	}
 	cli := fake.NewClientBuilder().WithScheme(tlsTestScheme).WithObjects(apiServer).Build()
-	minVersion, _, _, err := fetchTLSConfig(context.Background(), cli)
+	resolved, err := ResolveTLSConfig(context.Background(), cli)
+	minVersion := resolved.MinVersion
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -396,7 +405,7 @@ func TestFetchTLSConfig_StrictRejectsInvalidProfiles(t *testing.T) {
 				TLSAdherence: configv1.TLSAdherencePolicyStrictAllComponents, TLSSecurityProfile: tt.profile,
 			}}
 			cli := fake.NewClientBuilder().WithScheme(tlsTestScheme).WithObjects(apiServer).Build()
-			if _, _, _, err := fetchTLSConfig(context.Background(), cli); err == nil {
+			if _, err := ResolveTLSConfig(context.Background(), cli); err == nil {
 				t.Fatal("expected strict profile error")
 			}
 		})
@@ -411,7 +420,8 @@ func TestFetchTLSConfig_DropsRC4AndRetainsUsableCipher(t *testing.T) {
 				Ciphers: []string{"TLS_RSA_WITH_RC4_128_SHA", "ECDHE-RSA-AES128-GCM-SHA256"}}}},
 	}}
 	cli := fake.NewClientBuilder().WithScheme(tlsTestScheme).WithObjects(apiServer).Build()
-	_, ciphers, _, err := fetchTLSConfig(context.Background(), cli)
+	resolved, err := ResolveTLSConfig(context.Background(), cli)
+	ciphers := resolved.CipherSuites
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -516,7 +526,8 @@ func TestFetchTLSConfig_NoMatchError_ReturnsDefaults(t *testing.T) {
 		}).
 		Build()
 
-	minVersion, cipherSuites, _, err := fetchTLSConfig(context.Background(), cli)
+	resolved, err := ResolveTLSConfig(context.Background(), cli)
+	minVersion, cipherSuites := resolved.MinVersion, resolved.CipherSuites
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -539,7 +550,7 @@ func TestFetchTLSConfig_NotRegisteredError_FailsClosed(t *testing.T) {
 		WithScheme(runtime.NewScheme()).
 		Build()
 
-	if _, _, _, err := fetchTLSConfig(context.Background(), cli); err == nil {
+	if _, err := ResolveTLSConfig(context.Background(), cli); err == nil {
 		t.Fatal("expected not-registered APIServer read to fail closed")
 	}
 }

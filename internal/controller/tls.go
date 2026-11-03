@@ -111,11 +111,6 @@ func intermediateProfileSpec() configv1.TLSProfileSpec {
 	return *configv1.TLSProfiles[configv1.TLSProfileIntermediateType]
 }
 
-func fetchTLSConfig(ctx context.Context, cl client.Client) (string, string, string, error) {
-	result, err := ResolveTLSConfig(ctx, cl)
-	return result.MinVersion, result.CipherSuites, result.Groups, err
-}
-
 // MetricsOptions resolves the cluster TLS policy before the manager starts and
 // returns secure controller-runtime metrics options using the same policy that
 // is projected into the operand.
