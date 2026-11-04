@@ -1473,14 +1473,10 @@ func TestReconcile_TransientTLSFallback_SchedulesRetry(t *testing.T) {
 	}
 }
 
-// TestReconcile_SteadyState_NoRequeueWithoutTransientFallback is the control
-// case for the transient-fallback retry: the same settled reconcile without a
-// transient APIServer read must return a zero result, because nothing is
-// pending convergence. With framework v0.4.0, NotFound (the API is served but
-// the APIServer object is missing) returns Watchable=true, so the reconciler
-// correctly requeues to watch for the object's creation — this test now
-// verifies that the requeue is bounded and non-erroring rather than absent.
-func TestReconcile_SteadyState_NoRequeueWithoutTransientFallback(t *testing.T) {
+// TestReconcile_MissingAPIServer_SchedulesRetry verifies that a missing
+// APIServer object on a served API is watchable with framework v0.4.0+, so the
+// reconciler schedules its standard retry while it waits for the object.
+func TestReconcile_MissingAPIServer_SchedulesRetry(t *testing.T) {
 	cr := newTestCR()
 	v1alpha1.NewConditionsManager(cr, cr.Generation).
 		MarkTrueWithReason(v1alpha1.ConditionMCPServerStorageMigrated, reasonStorageMigrationSucceeded)
@@ -1493,11 +1489,37 @@ func TestReconcile_SteadyState_NoRequeueWithoutTransientFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// With framework v0.4.0+, a missing APIServer object on a served API
-	// returns Watchable=true: the reconciler requeues with the standard
-	// retry interval to converge once the object appears.
-	if result.RequeueAfter <= 0 {
-		t.Errorf("RequeueAfter = %v, want a positive retry interval (the APIServer object is missing but watchable)", result.RequeueAfter)
+	if result.RequeueAfter != defaultRequeueDelay {
+		t.Errorf("RequeueAfter = %v, want %v (the APIServer object is missing but watchable)", result.RequeueAfter, defaultRequeueDelay)
+	}
+}
+
+// TestReconcile_SteadyState_NoRequeue verifies that a fully settled reconcile
+// with a valid APIServer profile has no pending convergence work.
+func TestReconcile_SteadyState_NoRequeue(t *testing.T) {
+	cr := newTestCR()
+	v1alpha1.NewConditionsManager(cr, cr.Generation).
+		MarkTrueWithReason(v1alpha1.ConditionMCPServerStorageMigrated, reasonStorageMigrationSucceeded)
+	apiServer := &configv1.APIServer{
+		ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+		Spec: configv1.APIServerSpec{
+			TLSAdherence: configv1.TLSAdherencePolicyStrictAllComponents,
+			TLSSecurityProfile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileIntermediateType,
+			},
+		},
+	}
+
+	r := newTestReconcilerFull(&fakeManifestProvider{}, testOperandImage, cr, apiServer)
+
+	result, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: v1alpha1.MCPLifecycleOperatorInstanceName},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.RequeueAfter != 0 {
+		t.Errorf("RequeueAfter = %v, want 0 in steady state", result.RequeueAfter)
 	}
 }
 
