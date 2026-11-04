@@ -8,7 +8,7 @@ require (
 	github.com/manifestival/manifestival v0.7.2
 	github.com/onsi/gomega v1.44.0
 	github.com/opendatahub-io/odh-platform-utilities v0.6.0
-	github.com/opendatahub-io/odh-platform-utilities/framework v0.3.1
+	github.com/opendatahub-io/odh-platform-utilities/framework v0.4.0
 	github.com/openshift/api v0.0.0-20261029222750-c757da50cb18
 	github.com/openshift/controller-runtime-common v0.0.0-20261026124434-bdfc411d93cd
 	github.com/openshift/library-go v0.0.0-20261028054900-dbcad7febe41

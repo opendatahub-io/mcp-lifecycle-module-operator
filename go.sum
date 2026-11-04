@@ -292,8 +292,8 @@ github.com/opendatahub-io/mcp-lifecycle-operator v0.0.0-20261030135940-54191cfbf
 github.com/opendatahub-io/mcp-lifecycle-operator v0.0.0-20261030135940-54191cfbfd12/go.mod h1:9cKx8WuyJgrblDVpFKiliyntXycd4IelG4rcivg/8PA=
 github.com/opendatahub-io/odh-platform-utilities v0.6.0 h1:diF9LHcd879ElWegajD1TlfGOIJK0eXlQQqortMPsB8=
 github.com/opendatahub-io/odh-platform-utilities v0.6.0/go.mod h1:/yYTo/gyspyobqyy67oS557D8UN9VH1IuixJgfP3qYg=
-github.com/opendatahub-io/odh-platform-utilities/framework v0.3.1 h1:EOVfBVpH2cwO/TL0Ue4RjHwXFufUR+UBQzXHZCq4UQE=
-github.com/opendatahub-io/odh-platform-utilities/framework v0.3.1/go.mod h1:S6DJv3u/ei458FSrKPU4Drvm8VVxjnS+SkOrEBIOjgQ=
+github.com/opendatahub-io/odh-platform-utilities/framework v0.4.0 h1:kiRaMPhR9JQfjkEZeqqzENViAS7gS4Q1EdSOpGKT3q8=
+github.com/opendatahub-io/odh-platform-utilities/framework v0.4.0/go.mod h1:S6DJv3u/ei458FSrKPU4Drvm8VVxjnS+SkOrEBIOjgQ=
 github.com/openshift/api v0.0.0-20261029222750-c757da50cb18 h1:3W9uZkHbIUft+Nuqqp/eq+GEyI22yT57oH0YcW903As=
 github.com/openshift/api v0.0.0-20261029222750-c757da50cb18/go.mod h1:2oI3aXQFDjjl7l4xA9ZPSkB+l+lyfWLg7P2sWg9yEvM=
 github.com/openshift/controller-runtime-common v0.0.0-20261026124434-bdfc411d93cd h1:ryKoDx8pbVqytd/plQ5TvOeoTTC8l4akPB6O3FZULuQ=
