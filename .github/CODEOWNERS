@@ -1,0 +1,4 @@
+# API contract testing configuration.
+# The compatibility workflow and its baseline SHA are what keep the check honest,
+# so changing them must always go through an owner's review (RHOAIENG-103166).
+/.github/workflows/api-contract.yml   @cardil @creydr @DavidHurta @jaideepr97 @Kaustubh-pande @matzew @RadekManak

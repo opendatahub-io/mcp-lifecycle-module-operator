@@ -1,0 +1,38 @@
+name: API contract checks
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  # Baseline: the commit the RHOAI 3.6 release line was based on - the merge-base of the
+  # downstream rhoai-3.6 release and this repo's main, as computed by release_baseline.py
+  # (data/release-baselines/3.6.json in red-hat-data-services/api-contract-tests). This is
+  # the shared-history baseline the tooling expects; it is not the midstream rhoai-3.6
+  # branch head. No GA release tag exists for this repository.
+  # Moving this baseline forward requires approval from someone other than the author
+  # (RHOAIENG-103166).
+  crd-compat:
+    uses: red-hat-data-services/api-contract-tests/.github/workflows/provider-crd-check.yml@latest
+    with:
+      crd-glob: config/crd/bases/*.yaml
+      baseline-refs: ad7ec544d9e45620c32615bd6af34269ecd0b23b
+      mode: enforce
+
+  coverage:
+    uses: red-hat-data-services/api-contract-tests/.github/workflows/provider-coverage-check.yml@latest
+    with:
+      crd-globs: config/crd/bases/*.yaml
+      # Excluded CRDs, with reasons:
+      #  - config/manifests/mcp-lifecycle-operator/crd/bases/*.yaml: CRDs of another
+      #    project (group mcp.x-k8s.io), bundled here only for deployment.
+      #  - internal/controller/resources/*.yaml: generated OLM/install bundle.
+      crd-exclude-globs: >-
+        config/manifests/mcp-lifecycle-operator/crd/bases/*.yaml
+        internal/controller/resources/*.yaml
+      baseline-refs: ad7ec544d9e45620c32615bd6af34269ecd0b23b
+      yq-version: "4.45.1"
+      mode: enforce
