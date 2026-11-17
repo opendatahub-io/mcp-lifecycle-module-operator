@@ -87,6 +87,12 @@ const (
 
 	distributionStandalone = "Standalone"
 
+	// certManagerCertificateCRDName is the cert-manager Certificate CRD. The
+	// operand Deployment mounts cert-manager-minted serving certificates
+	// (webhook and metrics) as required volumes, so it can only run on a cluster
+	// where cert-manager serves this API.
+	certManagerCertificateCRDName = "certificates.cert-manager.io"
+
 	// conversionCheckPageLimit bounds each page of the conversion-health LIST so
 	// the check stays cheap even with many stored MCPServer objects.
 	conversionCheckPageLimit int64 = 500
@@ -216,6 +222,35 @@ func (r *MCPLifecycleOperatorReconciler) reconcile(ctx context.Context, cr *v1al
 
 	if cr.Spec.ManagementState == platformcommon.Removed {
 		return r.handleRemoved(ctx, cr, cm)
+	}
+
+	// The operand Deployment mounts cert-manager-minted serving certificates
+	// (webhook and metrics) as required volumes, so it cannot become ready on a
+	// cluster where the cert-manager Certificate API is absent. Check for the CRD
+	// up front - before any TLS resolution or manifest rendering - so no expensive
+	// work runs while cert-manager is missing. This guards against cert-manager not
+	// being installed; CRD presence only means the API is registered, not that
+	// cert-manager is healthy or able to issue certificates. The
+	// CustomResourceDefinition watch re-triggers this reconcile once the CRD
+	// appears, so the operand recovers automatically without manual intervention.
+	certManagerAvailable, err := r.crdAvailable(ctx, certManagerCertificateCRDName)
+	if err != nil {
+		cm.MarkFalse(v1alpha1.ConditionMCPLifecycleOperatorAvailable,
+			"CertManagerCheckFailed", fmt.Sprintf("Failed to check cert-manager availability: %v", err))
+		cm.AggregateReady()
+
+		return ctrl.Result{}, fmt.Errorf("checking cert-manager CRD availability: %w", err)
+	}
+	if !certManagerAvailable {
+		log.Info("cert-manager is not installed, deferring operand deployment")
+		cm.MarkFalse(v1alpha1.ConditionMCPLifecycleOperatorAvailable,
+			"CertManagerNotInstalled",
+			"cert-manager is not installed: the operand requires cert-manager (certificates.cert-manager.io) "+
+				"to mint its webhook and metrics serving certificates. Install cert-manager; the operand will "+
+				"deploy automatically once it is available.")
+		cm.AggregateReady()
+
+		return ctrl.Result{RequeueAfter: defaultRequeueDelay}, nil
 	}
 
 	gateways, err := r.discoverMCPGateways(ctx)
@@ -712,6 +747,15 @@ func (r *MCPLifecycleOperatorReconciler) patchStatus(ctx context.Context, orig, 
 	return r.Status().Patch(ctx, updated, patch)
 }
 
+// isWatchedCRD reports whether a CustomResourceDefinition name is one the
+// controller watches to re-trigger reconciliation: the gateway CRDs plus the
+// cert-manager Certificate CRD that gates operand deployment.
+func isWatchedCRD(name string) bool {
+	return name == mcpGatewayExtensionCRDName ||
+		name == gatewayCRDName ||
+		name == certManagerCertificateCRDName
+}
+
 // SetupWithManager registers the controller with the manager.
 func (r *MCPLifecycleOperatorReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.enqueueComponentCR = handler.EnqueueRequestsFromMapFunc(func(_ context.Context, _ client.Object) []reconcile.Request {
@@ -728,9 +772,8 @@ func (r *MCPLifecycleOperatorReconciler) SetupWithManager(mgr ctrl.Manager) erro
 		return obj.GetName() == platformConfigName && obj.GetNamespace() == r.PodNamespace
 	})
 
-	gatewayCRDPredicate := predicate.NewPredicateFuncs(func(obj client.Object) bool {
-		name := obj.GetName()
-		return name == "mcpgatewayextensions.mcp.kuadrant.io" || name == "gateways.gateway.networking.k8s.io"
+	crdWatchPredicate := predicate.NewPredicateFuncs(func(obj client.Object) bool {
+		return isWatchedCRD(obj.GetName())
 	})
 
 	b := ctrl.NewControllerManagedBy(mgr).
@@ -743,7 +786,7 @@ func (r *MCPLifecycleOperatorReconciler) SetupWithManager(mgr ctrl.Manager) erro
 		Watches(&rbacv1.ClusterRoleBinding{}, r.enqueueComponentCR, builder.WithPredicates(managedPredicate)).
 		Watches(&rbacv1.Role{}, r.enqueueComponentCR, builder.WithPredicates(managedPredicate)).
 		Watches(&rbacv1.RoleBinding{}, r.enqueueComponentCR, builder.WithPredicates(managedPredicate)).
-		Watches(&extv1.CustomResourceDefinition{}, r.enqueueComponentCR, builder.WithPredicates(predicate.Or(managedPredicate, gatewayCRDPredicate)))
+		Watches(&extv1.CustomResourceDefinition{}, r.enqueueComponentCR, builder.WithPredicates(predicate.Or(managedPredicate, crdWatchPredicate)))
 
 	if isOpenShiftCluster(mgr) {
 		b = b.Watches(&configv1.APIServer{}, r.enqueueComponentCR)
