@@ -143,7 +143,7 @@ func newGatewayResource(namespace, name string, listeners ...string) *unstructur
 		"kind":       "Gateway",
 		"metadata":   map[string]interface{}{"namespace": namespace, "name": name},
 		"spec": map[string]interface{}{
-			"gatewayClassName": "istio",
+			"gatewayClassName": "test-no-controller",
 			"listeners":        listenerList,
 		},
 	}}
