@@ -1,25 +1,25 @@
 module github.com/opendatahub-io/mcp-lifecycle-module-operator
 
-go 1.26.10
+go 1.27.0
 
 require (
 	github.com/go-logr/logr v1.4.4
-	github.com/kubernetes-sigs/mcp-lifecycle-operator v0.0.0
+	github.com/kubernetes-sigs/mcp-lifecycle-operator v0.4.0
 	github.com/manifestival/manifestival v0.7.2
 	github.com/onsi/gomega v1.44.0
 	github.com/opendatahub-io/odh-platform-utilities v0.6.0
-	github.com/opendatahub-io/odh-platform-utilities/framework v0.4.0
-	github.com/openshift/api v0.0.0-20261029222750-c757da50cb18
+	github.com/opendatahub-io/odh-platform-utilities/framework v0.5.0
+	github.com/openshift/api v0.0.0-20261120191000-0e5fe796a10f
 	github.com/openshift/controller-runtime-common v0.0.0-20261026124434-bdfc411d93cd
 	github.com/openshift/library-go v0.0.0-20261028054900-dbcad7febe41
-	golang.org/x/mod v0.42.0
+	golang.org/x/mod v0.43.0
 	k8s.io/api v0.37.2
 	k8s.io/apiextensions-apiserver v0.37.2
 	k8s.io/apimachinery v0.37.2
 	k8s.io/client-go v0.37.2
-	sigs.k8s.io/controller-runtime v0.25.2
+	sigs.k8s.io/controller-runtime v0.25.3
 	sigs.k8s.io/e2e-framework v0.7.0
-	sigs.k8s.io/gateway-api v1.6.3
+	sigs.k8s.io/gateway-api v1.7.0
 )
 
 require (
@@ -106,7 +106,7 @@ require (
 	golang.org/x/term v0.47.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
 	golang.org/x/time v0.16.0 // indirect
-	golang.org/x/tools v0.51.0 // indirect
+	golang.org/x/tools v0.52.0 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.5.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20261019180522-ce908d29299b // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20261019180522-ce908d29299b // indirect
@@ -129,6 +129,6 @@ require (
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
 
-replace github.com/kubernetes-sigs/mcp-lifecycle-operator => github.com/opendatahub-io/mcp-lifecycle-operator v0.0.0-20261111165536-6a3f002e1e7a
+replace github.com/kubernetes-sigs/mcp-lifecycle-operator => github.com/opendatahub-io/mcp-lifecycle-operator v0.0.0-20261116091614-d1347e5d32f1
 
 tool gotest.tools/gotestsum
