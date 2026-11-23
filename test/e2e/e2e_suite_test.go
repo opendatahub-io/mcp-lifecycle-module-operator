@@ -147,11 +147,22 @@ func createTestNamespace(t *testing.T, ctx context.Context, prefix string) strin
 	namespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{GenerateName: prefix}}
 	g.Expect(k8sClient.Create(ctx, namespace)).To(Succeed())
 	t.Cleanup(func() {
+		t.Logf("Deleting fixture namespace %s", namespace.Name)
 		uid := namespace.UID
 		err := k8sClient.Delete(ctx, namespace, client.Preconditions{UID: &uid})
 		g.Expect(err == nil || apierrors.IsNotFound(err)).To(BeTrue(), "delete fixture namespace: %v", err)
 		g.Eventually(func() bool {
-			return apierrors.IsNotFound(k8sClient.Get(ctx, types.NamespacedName{Name: namespace.Name}, &corev1.Namespace{}))
+			ns := &corev1.Namespace{}
+			err := k8sClient.Get(ctx, types.NamespacedName{Name: namespace.Name}, ns)
+			if apierrors.IsNotFound(err) {
+				return true
+			}
+			if err != nil {
+				t.Logf("Error checking namespace %s: %v", namespace.Name, err)
+				return false
+			}
+			t.Logf("Namespace %s still in phase %s (metadata finalizers: %v, spec finalizers: %v)", namespace.Name, ns.Status.Phase, ns.Finalizers, ns.Spec.Finalizers)
+			return false
 		}, timeout, interval).Should(BeTrue(), "fixture namespace %s still exists", namespace.Name)
 	})
 	return namespace.Name
