@@ -5332,7 +5332,7 @@ spec:
               fieldPath: metadata.namespace
         - name: GOMEMLIMIT
           value: 460MiB
-        image: quay.io/opendatahub/odh-mcp-lifecycle-operator@sha256:9613b5037d36402a39d84488b7addf4d93e0a7e74a411d7e22f57166f8f3011f
+        image: quay.io/opendatahub/odh-mcp-lifecycle-operator@sha256:e0f06009934da3402d1156176f899ddf7c4157e4af5af7ec3c25cb3f359066fa
         livenessProbe:
           httpGet:
             path: /healthz
