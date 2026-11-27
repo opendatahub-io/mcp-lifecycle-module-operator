@@ -17,9 +17,9 @@ require (
 	k8s.io/apiextensions-apiserver v0.37.2
 	k8s.io/apimachinery v0.37.2
 	k8s.io/client-go v0.37.2
-	sigs.k8s.io/controller-runtime v0.25.2
+	sigs.k8s.io/controller-runtime v0.25.3
 	sigs.k8s.io/e2e-framework v0.7.0
-	sigs.k8s.io/gateway-api v1.6.3
+	sigs.k8s.io/gateway-api v1.7.0
 )
 
 require (
@@ -129,6 +129,6 @@ require (
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
 
-replace github.com/kubernetes-sigs/mcp-lifecycle-operator => github.com/opendatahub-io/mcp-lifecycle-operator v0.0.0-20261125140512-ae0c2948ad50
+replace github.com/kubernetes-sigs/mcp-lifecycle-operator => github.com/opendatahub-io/mcp-lifecycle-operator v0.0.0-20261126124248-2f853ce7571a
 
 tool gotest.tools/gotestsum
