@@ -106,6 +106,19 @@ func newTestReconciler(cli client.Client, provider manifests.Provider, operandIm
 }
 
 func newTestReconcilerFull(provider manifests.Provider, operandImage string, objects ...client.Object) *MCPLifecycleOperatorReconciler {
+	return newTestReconcilerFullIntercepted(provider, operandImage, nil, objects...)
+}
+
+// newTestReconcilerFullIntercepted builds the full harness with an additional
+// client Get interceptor layered on top of the standard harness interceptors,
+// so tests can inject read failures (e.g. transient APIServer errors) for
+// specific object types while everything else reads through normally.
+func newTestReconcilerFullIntercepted(
+	provider manifests.Provider,
+	operandImage string,
+	getInterceptor func(context.Context, client.WithWatch, client.ObjectKey, client.Object, ...client.GetOption) error,
+	objects ...client.Object,
+) *MCPLifecycleOperatorReconciler {
 	cli := fake.NewClientBuilder().
 		WithScheme(testScheme).
 		WithObjects(objects...).
@@ -117,6 +130,7 @@ func newTestReconcilerFull(provider manifests.Provider, operandImage string, obj
 				}
 				return c.Create(ctx, obj, opts...)
 			},
+			Get: getInterceptor,
 		}).
 		Build()
 
@@ -1404,6 +1418,108 @@ func TestReconcile_SteadyState_SkipsConversionLIST(t *testing.T) {
 	c := findCondition(updated, v1alpha1.ConditionMCPLifecycleOperatorAvailable)
 	if c == nil || c.Status != metav1.ConditionTrue {
 		t.Errorf("Available condition = %+v, want True in steady state", c)
+	}
+}
+
+// TestReconcile_TransientTLSFallback_SchedulesRetry covers the fallback
+// reconcile that schedules a retry without an APIServer watch event: a
+// transient APIServer TLS read must not degrade the operand (Available stays
+// True, Intermediate defaults are projected) but must schedule a requeue so
+// the resolved profile converges once the API server recovers.
+func TestReconcile_TransientTLSFallback_SchedulesRetry(t *testing.T) {
+	cr := newTestCR()
+	// Mark the storage-version migration as settled so the only requeue source
+	// in an otherwise fully successful reconcile is the transient-fallback
+	// retry at the end of reconcile().
+	v1alpha1.NewConditionsManager(cr, cr.Generation).
+		MarkTrueWithReason(v1alpha1.ConditionMCPServerStorageMigrated, reasonStorageMigrationSucceeded)
+
+	var captured manifests.Params
+	provider := &capturingManifestProvider{
+		delegate: &fakeManifestProvider{},
+		capture:  func(p manifests.Params) { captured = p },
+	}
+
+	r := newTestReconcilerFullIntercepted(provider, testOperandImage,
+		func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+			if _, ok := obj.(*configv1.APIServer); ok {
+				return k8serr.NewServiceUnavailable("temporary API server failure")
+			}
+			return c.Get(ctx, key, obj, opts...)
+		}, cr)
+
+	result, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: v1alpha1.MCPLifecycleOperatorInstanceName},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.RequeueAfter != defaultRequeueDelay {
+		t.Errorf("RequeueAfter = %v, want %v (transient fallback must schedule a retry)", result.RequeueAfter, defaultRequeueDelay)
+	}
+
+	updated := &v1alpha1.MCPLifecycleOperator{}
+	if getErr := r.Get(context.Background(), types.NamespacedName{Name: v1alpha1.MCPLifecycleOperatorInstanceName}, updated); getErr != nil {
+		t.Fatalf("failed to get updated CR: %v", getErr)
+	}
+	c := findCondition(updated, v1alpha1.ConditionMCPLifecycleOperatorAvailable)
+	if c == nil || c.Status != metav1.ConditionTrue {
+		t.Errorf("Available condition = %+v, want True: a transient profile read must not degrade the operand", c)
+	}
+
+	if captured.TLSMinVersion != string(configv1.VersionTLS12) || captured.TLSCipherSuites == "" {
+		t.Errorf("operand TLS params = min %q ciphers %q, want Intermediate fallback values",
+			captured.TLSMinVersion, captured.TLSCipherSuites)
+	}
+}
+
+// TestReconcile_MissingAPIServer_SchedulesRetry verifies that a missing
+// APIServer object on a served API is watchable with framework v0.4.0+, so the
+// reconciler schedules its standard retry while it waits for the object.
+func TestReconcile_MissingAPIServer_SchedulesRetry(t *testing.T) {
+	cr := newTestCR()
+	v1alpha1.NewConditionsManager(cr, cr.Generation).
+		MarkTrueWithReason(v1alpha1.ConditionMCPServerStorageMigrated, reasonStorageMigrationSucceeded)
+
+	r := newTestReconcilerFull(&fakeManifestProvider{}, testOperandImage, cr)
+
+	result, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: v1alpha1.MCPLifecycleOperatorInstanceName},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.RequeueAfter != defaultRequeueDelay {
+		t.Errorf("RequeueAfter = %v, want %v (the APIServer object is missing but watchable)", result.RequeueAfter, defaultRequeueDelay)
+	}
+}
+
+// TestReconcile_SteadyState_NoRequeue verifies that a fully settled reconcile
+// with a valid APIServer profile has no pending convergence work.
+func TestReconcile_SteadyState_NoRequeue(t *testing.T) {
+	cr := newTestCR()
+	v1alpha1.NewConditionsManager(cr, cr.Generation).
+		MarkTrueWithReason(v1alpha1.ConditionMCPServerStorageMigrated, reasonStorageMigrationSucceeded)
+	apiServer := &configv1.APIServer{
+		ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+		Spec: configv1.APIServerSpec{
+			TLSAdherence: configv1.TLSAdherencePolicyStrictAllComponents,
+			TLSSecurityProfile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileIntermediateType,
+			},
+		},
+	}
+
+	r := newTestReconcilerFull(&fakeManifestProvider{}, testOperandImage, cr, apiServer)
+
+	result, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: v1alpha1.MCPLifecycleOperatorInstanceName},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.RequeueAfter != 0 {
+		t.Errorf("RequeueAfter = %v, want 0 in steady state", result.RequeueAfter)
 	}
 }
 
