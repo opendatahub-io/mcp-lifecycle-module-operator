@@ -32,13 +32,12 @@ const (
 	// failed migration is observable but never degrades operand readiness.
 	ConditionMCPServerStorageMigrated = "MCPServerStorageMigrated"
 
-	// ConditionMCPServerConversionVerified records that THIS controller has
-	// verified stored MCPServer objects are convertible to v1beta1 (by listing
-	// them at v1beta1, which forces the conversion webhook to run). It is a
-	// durable marker the pre-gate (ungated) controller never writes, so a
-	// freshly rolled-out controller re-runs the conversion check even when the
-	// previous controller already advanced status.distribution to the desired
-	// version during the upgrade window. It is intentionally EXCLUDED from
+	// ConditionMCPServerConversionVerified records that this controller has
+	// verified stored MCPServer objects can be served at v1 and v1beta1. Its
+	// reason distinguishes the current two-version check from the earlier
+	// v1beta1-only check, so a freshly rolled-out controller rechecks conversion
+	// even if the previous controller already marked this condition True and
+	// advanced status.distribution. It is intentionally EXCLUDED from
 	// featureConditionTypes so it never affects operand readiness; conversion
 	// FAILURES are surfaced on MCPLifecycleOperatorAvailable instead.
 	ConditionMCPServerConversionVerified = "MCPServerConversionVerified"

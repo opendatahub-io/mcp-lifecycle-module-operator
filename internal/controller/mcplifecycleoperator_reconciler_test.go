@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -160,11 +161,12 @@ func newTestReconcilerFullIntercepted(
 // test scheme (mcp.x-k8s.io is intentionally absent, mirroring the manager
 // scheme in cmd/main.go).
 var mcpServerListKinds = map[schema.GroupVersionResource]string{
-	mcpServerGVR: "MCPServerList",
+	mcpServerV1GVR: "MCPServerList",
+	mcpServerGVR:   "MCPServerList",
 }
 
 // newFakeDynamicWithMCPServers builds a fake dynamic client that can LIST
-// MCPServers at v1beta1, seeded with the given objects. An empty seed yields a
+// MCPServers at v1 and v1beta1, seeded with the given objects. An empty seed yields a
 // successful empty list (the vacuous-pass case).
 func newFakeDynamicWithMCPServers(objects ...runtime.Object) *fakedynamic.FakeDynamicClient {
 	return fakedynamic.NewSimpleDynamicClientWithCustomListKinds(testScheme, mcpServerListKinds, objects...)
@@ -1048,6 +1050,15 @@ func TestCheckConversionHealth_Healthy(t *testing.T) {
 	if result != (ctrl.Result{}) {
 		t.Errorf("expected empty result, got %v", result)
 	}
+	var versions []string
+	for _, action := range dyn.Actions() {
+		if action.GetVerb() == "list" && action.GetResource().Resource == "mcpservers" {
+			versions = append(versions, action.GetResource().Version)
+		}
+	}
+	if !slices.Equal(versions, []string{"v1", "v1beta1"}) {
+		t.Errorf("MCPServer LIST versions = %v, want [v1 v1beta1]", versions)
+	}
 }
 
 func TestCheckConversionHealth_NoObjects_VacuousPass(t *testing.T) {
@@ -1094,10 +1105,33 @@ func TestCheckConversionHealth_ListError_Requeues(t *testing.T) {
 	if !strings.Contains(c.Message, "x509") {
 		t.Errorf("condition message = %q, want it to carry the underlying error", c.Message)
 	}
+	if actions := dyn.Actions(); len(actions) != 1 || actions[0].GetResource().Version != "v1" {
+		t.Errorf("LIST actions = %v, want only the failing v1 LIST", actions)
+	}
+}
+
+func TestCheckConversionHealth_BetaListError_Requeues(t *testing.T) {
+	dyn := newFakeDynamicWithMCPServers()
+	dyn.PrependReactor("list", "mcpservers", func(action clienttesting.Action) (bool, runtime.Object, error) {
+		if action.GetResource().Version == "v1beta1" {
+			return true, nil, fmt.Errorf("conversion webhook unavailable")
+		}
+		return false, nil, nil
+	})
+	r, cr, cm := newConversionTestReconciler(dyn)
+
+	result, ready := r.checkConversionHealth(context.Background(), cm)
+	if ready || result.RequeueAfter != defaultRequeueDelay {
+		t.Fatalf("beta LIST failure: ready=%v, result=%v; want requeue", ready, result)
+	}
+	c := findCondition(cr, v1alpha1.ConditionMCPLifecycleOperatorAvailable)
+	if c == nil || c.Reason != reasonConversionCheckFailed || !strings.Contains(c.Message, "v1beta1") {
+		t.Errorf("condition = %+v, want beta conversion failure", c)
+	}
 }
 
 func TestCheckConversionHealth_Pending_WhenAPINotServed(t *testing.T) {
-	// The dynamic client issues raw REST calls, so an unserved MCPServer v1beta1
+	// The dynamic client issues raw REST calls, so an unserved MCPServer version
 	// resource comes back as a 404 NotFound - a LIST of a served resource with no
 	// objects would instead return an empty list. The scheme/mapper variants are
 	// handled defensively too. All must defer via ConversionCheckPending rather
@@ -1141,7 +1175,10 @@ func TestCheckConversionHealth_ExpiredContinue_Restarts(t *testing.T) {
 	// unavailable.
 	dyn := newFakeDynamicWithMCPServers()
 	calls := 0
-	dyn.PrependReactor("list", "mcpservers", func(clienttesting.Action) (bool, runtime.Object, error) {
+	dyn.PrependReactor("list", "mcpservers", func(action clienttesting.Action) (bool, runtime.Object, error) {
+		if action.GetResource().Version == "v1beta1" {
+			return false, nil, nil
+		}
 		calls++
 
 		list := &unstructured.UnstructuredList{}
@@ -1187,7 +1224,7 @@ func TestCheckConversionHealth_ExpiredContinue_Restarts(t *testing.T) {
 	if calls != 3 {
 		t.Errorf("expected 3 LIST calls (restart after expiry), got %d", calls)
 	}
-	wantContinues := []string{"", "page-2-token", ""}
+	wantContinues := []string{"", "page-2-token", "", ""}
 	if len(continues) != len(wantContinues) {
 		t.Fatalf("recorded %d List calls, want %d: %v", len(continues), len(wantContinues), continues)
 	}
@@ -1235,43 +1272,46 @@ func TestCheckConversionHealth_ExpiredContinue_GivesUpAfterCap(t *testing.T) {
 
 func TestCheckConversionHealth_Paginated(t *testing.T) {
 	// The fake dynamic client does not honor Limit/Continue on its own, so drive
-	// pagination explicitly: the first LIST returns a continue token, the second
-	// returns none. Asserting exactly two calls proves the gate follows Continue
-	// rather than stopping after the first page.
+	// pagination explicitly for each version. Each first page returns a token,
+	// and each second page ends the list. This also checks that the token from
+	// v1 is not carried into the v1beta1 list.
 	dyn := newFakeDynamicWithMCPServers()
-	calls := 0
-	dyn.PrependReactor("list", "mcpservers", func(clienttesting.Action) (bool, runtime.Object, error) {
-		calls++
+	calls := map[string]int{}
+	dyn.PrependReactor("list", "mcpservers", func(action clienttesting.Action) (bool, runtime.Object, error) {
+		version := action.GetResource().Version
+		calls[version]++
 
 		list := &unstructured.UnstructuredList{}
 		list.SetGroupVersionKind(schema.GroupVersionKind{
-			Group: mcpServerGVR.Group, Version: mcpServerGVR.Version, Kind: "MCPServerList",
+			Group: mcpServerGVR.Group, Version: version, Kind: "MCPServerList",
 		})
 
-		switch calls {
+		switch calls[version] {
 		case 1:
-			// First page returns a continue token; the gate must issue a second
-			// LIST. A gate that ignored GetContinue would stop here (calls == 1).
+			// The gate must follow this token with a second LIST.
 			list.Items = []unstructured.Unstructured{*newMCPServer("ns", "server-1")}
-			list.SetContinue("page-2-token")
+			list.SetContinue("page-2-" + version)
 		case 2:
-			// Empty continue token terminates the loop.
 			list.Items = []unstructured.Unstructured{*newMCPServer("ns", "server-2")}
-			list.SetContinue("")
 		default:
-			t.Fatalf("unexpected LIST call #%d (gate did not stop on empty continue)", calls)
+			t.Fatalf("unexpected %s LIST call #%d", version, calls[version])
 		}
 
 		return true, list, nil
 	})
 	r, _, cm := newConversionTestReconciler(dyn)
+	var continues []string
+	r.DynamicClient = &recordingDynamic{Interface: dyn, listContinues: &continues}
 
 	_, ready := r.checkConversionHealth(context.Background(), cm)
 	if !ready {
 		t.Fatal("expected ready=true across a paginated MCPServer list")
 	}
-	if calls != 2 {
-		t.Errorf("expected 2 LIST calls (Continue followed once), got %d", calls)
+	if calls["v1"] != 2 || calls["v1beta1"] != 2 {
+		t.Errorf("LIST calls = %v, want two per version", calls)
+	}
+	if want := []string{"", "page-2-v1", "", "page-2-v1beta1"}; !slices.Equal(continues, want) {
+		t.Errorf("Continue tokens = %v, want %v", continues, want)
 	}
 }
 
@@ -1392,7 +1432,7 @@ func TestReconcile_SteadyState_SkipsConversionLIST(t *testing.T) {
 	// settled, so the conversion gate must not re-LIST MCPServers.
 	cr.Status.Distribution = v1alpha1.Distribution{Name: "SelfManagedRHOAI", Version: "3.5.1"}
 	v1alpha1.NewConditionsManager(cr, cr.Generation).
-		MarkTrueWithReason(v1alpha1.ConditionMCPServerConversionVerified, "ConversionVerified")
+		MarkTrueWithReason(v1alpha1.ConditionMCPServerConversionVerified, reasonV1ConversionVerified)
 	platformCM := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      platformConfigName,
@@ -1516,17 +1556,14 @@ func TestReconcile_SteadyState_NoRequeueWithoutTransientFallback(t *testing.T) {
 	}
 }
 
-// TestReconcile_FirstUpgradeAfterRollout_RunsConversionLIST covers the rollout
-// that first introduces this gate: the previous (ungated) controller can
-// advance status.distribution to the desired version before this controller
-// runs, so status.distribution alone would (wrongly) look settled. Because the
-// MCPServerConversionVerified marker is absent, the gate must still run the
-// conversion LIST once, then record the marker.
-func TestReconcile_FirstUpgradeAfterRollout_RunsConversionLIST(t *testing.T) {
+// TestReconcile_LegacyConversionMarker_RunsNewGate covers rollout from the
+// v1beta1-only gate: its True marker does not prove the new v1 check ran.
+func TestReconcile_LegacyConversionMarker_RunsNewGate(t *testing.T) {
 	cr := newTestCR()
-	// Distribution already at the desired version (written by the predecessor),
-	// but NO verified marker: this controller has never checked conversion.
+	// Distribution already matches, but the predecessor only verified v1beta1.
 	cr.Status.Distribution = v1alpha1.Distribution{Name: "SelfManagedRHOAI", Version: "3.5.1"}
+	v1alpha1.NewConditionsManager(cr, cr.Generation).
+		MarkTrueWithReason(v1alpha1.ConditionMCPServerConversionVerified, "ConversionVerified")
 	platformCM := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      platformConfigName,
@@ -1552,8 +1589,8 @@ func TestReconcile_FirstUpgradeAfterRollout_RunsConversionLIST(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if listCalls == 0 {
-		t.Error("expected the conversion LIST to run on the first post-rollout reconcile, got 0 calls")
+	if listCalls != 2 {
+		t.Errorf("expected v1 and v1beta1 LISTs after a legacy marker, got %d calls", listCalls)
 	}
 
 	updated := &v1alpha1.MCPLifecycleOperator{}
@@ -1561,8 +1598,8 @@ func TestReconcile_FirstUpgradeAfterRollout_RunsConversionLIST(t *testing.T) {
 		t.Fatalf("failed to get updated CR: %v", getErr)
 	}
 	c := findCondition(updated, v1alpha1.ConditionMCPServerConversionVerified)
-	if c == nil || c.Status != metav1.ConditionTrue {
-		t.Errorf("MCPServerConversionVerified = %+v, want True after the check passes", c)
+	if c == nil || c.Status != metav1.ConditionTrue || c.Reason != reasonV1ConversionVerified {
+		t.Errorf("MCPServerConversionVerified = %+v, want True with reason %s", c, reasonV1ConversionVerified)
 	}
 }
 
@@ -1624,6 +1661,7 @@ func TestConversionHandshakeSettled(t *testing.T) {
 		name     string
 		dist     v1alpha1.Distribution
 		verified bool
+		legacy   bool
 		pc       platformConfig
 		want     bool
 	}{
@@ -1638,6 +1676,14 @@ func TestConversionHandshakeSettled(t *testing.T) {
 			name:     "not settled: distribution matches but conversion not yet verified (first rollout)",
 			dist:     v1alpha1.Distribution{Name: name, Version: version},
 			verified: false,
+			pc:       platformConfig{Available: true, DistributionName: name, DistributionVersion: version},
+			want:     false,
+		},
+		{
+			name:     "not settled: legacy beta-only verification marker",
+			dist:     v1alpha1.Distribution{Name: name, Version: version},
+			verified: true,
+			legacy:   true,
 			pc:       platformConfig{Available: true, DistributionName: name, DistributionVersion: version},
 			want:     false,
 		},
@@ -1675,8 +1721,12 @@ func TestConversionHandshakeSettled(t *testing.T) {
 			cr := newTestCR()
 			cr.Status.Distribution = tt.dist
 			if tt.verified {
+				reason := reasonV1ConversionVerified
+				if tt.legacy {
+					reason = "ConversionVerified"
+				}
 				v1alpha1.NewConditionsManager(cr, cr.Generation).
-					MarkTrueWithReason(v1alpha1.ConditionMCPServerConversionVerified, "ConversionVerified")
+					MarkTrueWithReason(v1alpha1.ConditionMCPServerConversionVerified, reason)
 			}
 			if got := conversionHandshakeSettled(cr, tt.pc); got != tt.want {
 				t.Errorf("conversionHandshakeSettled() = %v, want %v", got, tt.want)
