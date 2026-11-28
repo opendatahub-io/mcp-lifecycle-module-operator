@@ -16,14 +16,14 @@ jobs:
   # Moving this baseline forward requires approval from someone other than the author
   # (RHOAIENG-103166).
   crd-compat:
-    uses: red-hat-data-services/api-contract-tests/.github/workflows/provider-crd-check.yml@latest
+    uses: red-hat-data-services/api-contract-tests/.github/workflows/provider-crd-check.yml@d63fe27957117fd99161a693c7fdef9e20efb9d9 # latest
     with:
       crd-glob: config/crd/bases/*.yaml
       baseline-refs: ad7ec544d9e45620c32615bd6af34269ecd0b23b
       mode: enforce
 
   coverage:
-    uses: red-hat-data-services/api-contract-tests/.github/workflows/provider-coverage-check.yml@latest
+    uses: red-hat-data-services/api-contract-tests/.github/workflows/provider-coverage-check.yml@d63fe27957117fd99161a693c7fdef9e20efb9d9 # latest
     with:
       crd-globs: config/crd/bases/*.yaml
       # Excluded CRDs, with reasons:
